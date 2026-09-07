@@ -1,19 +1,13 @@
-// lib/github.ts
-import { App } from "@octokit/app";
+import { Octokit } from "@octokit/rest";
 
-export function getGitHubApp() {
-  const app = new App({
-    appId: process.env.GITHUB_APP_ID!,
-    privateKey: process.env.GITHUB_APP_PRIVATE_KEY!,
-    oauth: {
-      clientId: process.env.GITHUB_OAUTH_CLIENT_ID!,
-      clientSecret: process.env.GITHUB_OAUTH_CLIENT_SECRET!,
-    },
+export function getOctokitForUser(
+  accessToken: string
+): Octokit {
+  if (!accessToken) {
+    throw new Error("GitHub user access token is required");
+  }
+
+  return new Octokit({
+    auth: accessToken,
   });
-
-  return app;
-}
-
-export function getWebhookSecret(): string {
-  return process.env.GITHUB_WEBHOOK_SECRET!;
 }
