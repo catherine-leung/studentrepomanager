@@ -18,23 +18,42 @@ interface PageData {
     link_type: "solo" | "group";
     access_level: string;
     max_team_size: number | null;
+    expires_at: string | null;
+    is_active: boolean;
     org_name: string;
   };
   teams: Array<{
     id: number;
     team_name: string;
-    memberCount?: number;
+    expected_team_size: number;
+    memberCount: number;
   }>;
   membership: "active" | "pending" | "none";
-  existingRedemption?: {
-    repoName: string;
-    repoUrl: string;
-    cloneUrl: string;
-  };
+  existingRedemption?: RedemptionSummary;
+}
+
+interface RedemptionSummary {
+  repoName: string;
+  repoUrl: string;
+  cloneUrl: string;
+}
+
+function Spinner({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <div
+          className="animate-spin rounded-full h-12 w-12
+                     border-b-2 border-blue-600 mx-auto mb-4"
+        />
+        <p className="text-gray-600">{message}</p>
+      </div>
+    </div>
+  );
 }
 
 function RedeemContent() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const router = useRouter();
   const params = useParams();
   const linkId = params.linkId as string;
@@ -44,18 +63,25 @@ function RedeemContent() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
   const [redeeming, setRedeeming] = useState(false);
   const [redeemError, setRedeemError] = useState<
     string | null
   >(null);
-  const [success, setSuccess] = useState<{
-    repoName: string;
-    repoUrl: string;
-    cloneUrl: string;
-  } | null>(null);
+  const [success, setSuccess] =
+    useState<RedemptionSummary | null>(null);
 
-  // Fetch page data on mount and when session changes
+  // Fetch page data once the session status is known, and
+  // again whenever refreshKey changes (e.g. after the student
+  // accepts an org invitation and clicks "Continue").
   useEffect(() => {
+    if (status === "loading") {
+      return;
+    }
+
+    let cancelled = false;
+
     async function fetchPageData() {
       setLoading(true);
       setError(null);
@@ -63,43 +89,45 @@ function RedeemContent() {
       try {
         const response = await fetch(
           `/api/redeem/${linkId}`,
-          {
-            cache: "no-store",
-            headers: {
-              "Cache-Control": "no-cache, no-store, must-revalidate",
-            },
-          }
+          { cache: "no-store" }
         );
 
+        const data = await response.json();
+
         if (!response.ok) {
-          const data = await response.json();
           throw new Error(
             data.error || "Failed to load assignment"
           );
         }
 
-        const data: PageData = await response.json();
-        setPageData(data);
+        if (!cancelled) {
+          setPageData(data as PageData);
+        }
       } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load assignment"
-        );
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load assignment"
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     fetchPageData();
-  }, [linkId, session]);
 
-  // Handle solo redemption
-  async function handleSoloRedeem(
-    customSlug?: string
+    return () => {
+      cancelled = true;
+    };
+  }, [linkId, status, refreshKey]);
+
+  async function submitRedemption(
+    body: Record<string, unknown>
   ) {
-    if (!pageData) return;
-
     setRedeeming(true);
     setRedeemError(null);
 
@@ -109,22 +137,22 @@ function RedeemContent() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customSlug }),
+          body: JSON.stringify(body),
         }
       );
 
+      const data = await response.json();
+
       if (!response.ok) {
-        const data = await response.json();
         throw new Error(
           data.error || "Failed to redeem link"
         );
       }
 
-      const result = await response.json();
       setSuccess({
-        repoName: result.repoName,
-        repoUrl: result.repoUrl,
-        cloneUrl: result.cloneUrl,
+        repoName: data.repoName,
+        repoUrl: data.repoUrl,
+        cloneUrl: data.cloneUrl,
       });
     } catch (err) {
       setRedeemError(
@@ -137,113 +165,10 @@ function RedeemContent() {
     }
   }
 
-  // Handle group redemption - join existing team
-  async function handleSelectTeam(teamId: number) {
-    if (!pageData) return;
-
-    setRedeeming(true);
-    setRedeemError(null);
-
-    try {
-      const response = await fetch(
-        `/api/redeem/${linkId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            teamId,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(
-          data.error || "Failed to redeem link"
-        );
-      }
-
-      const result = await response.json();
-      setSuccess({
-        repoName: result.repoName,
-        repoUrl: result.repoUrl,
-        cloneUrl: result.cloneUrl,
-      });
-    } catch (err) {
-      setRedeemError(
-        err instanceof Error
-          ? err.message
-          : "Failed to redeem link"
-      );
-    } finally {
-      setRedeeming(false);
-    }
+  if (loading || status === "loading") {
+    return <Spinner message="Loading assignment..." />;
   }
 
-  // Handle group redemption - create new team
-  async function handleCreateTeam(
-    teamName: string,
-    expectedSize: number
-  ) {
-    if (!pageData) return;
-
-    setRedeeming(true);
-    setRedeemError(null);
-
-    try {
-      const response = await fetch(
-        `/api/redeem/${linkId}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            newTeamName: teamName,
-            expectedTeamSize: expectedSize,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(
-          data.error || "Failed to redeem link"
-        );
-      }
-
-      const result = await response.json();
-      setSuccess({
-        repoName: result.repoName,
-        repoUrl: result.repoUrl,
-        cloneUrl: result.cloneUrl,
-      });
-    } catch (err) {
-      setRedeemError(
-        err instanceof Error
-          ? err.message
-          : "Failed to redeem link"
-      );
-    } finally {
-      setRedeeming(false);
-    }
-  }
-
-  // Loading state
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12
-                          border-b-2 border-blue-600 mx-auto mb-4">
-          </div>
-          <p className="text-gray-600">
-            Loading assignment...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
   if (error || !pageData) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -266,7 +191,6 @@ function RedeemContent() {
     );
   }
 
-  // Unauthenticated state
   if (status === "unauthenticated") {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -294,22 +218,8 @@ function RedeemContent() {
     );
   }
 
-  // Authenticated but not org member
-  if (pageData.membership !== "active") {
-    return (
-      <JoinOrgPrompt
-        linkId={linkId}
-        orgName={pageData.link.org_name}
-        membership={pageData.membership}
-        onContinue={() => {
-          // Re-fetch page data to check membership
-          setLoading(true);
-        }}
-      />
-    );
-  }
-
-  // Already redeemed
+  // A student who already redeemed should always be able to
+  // find their repo, even if the link has since been closed.
   if (pageData.existingRedemption) {
     return (
       <RedeemSuccess
@@ -321,7 +231,6 @@ function RedeemContent() {
     );
   }
 
-  // Success state
   if (success) {
     return (
       <RedeemSuccess
@@ -333,7 +242,43 @@ function RedeemContent() {
     );
   }
 
-  // Redemption form
+  const isExpired =
+    pageData.link.expires_at !== null &&
+    new Date(pageData.link.expires_at) < new Date();
+
+  const unavailableReason = !pageData.link.is_active
+    ? "This assignment link has been deactivated."
+    : isExpired
+      ? "This assignment link has expired."
+      : null;
+
+  if (unavailableReason) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center max-w-md">
+          <h1 className="text-2xl font-bold mb-4">
+            {pageData.link.assessment_name}
+          </h1>
+          <p className="text-gray-600">
+            {unavailableReason} Please contact your
+            instructor.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (pageData.membership !== "active") {
+    return (
+      <JoinOrgPrompt
+        linkId={linkId}
+        orgName={pageData.link.org_name}
+        membership={pageData.membership}
+        onContinue={() => setRefreshKey((k) => k + 1)}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow">
@@ -357,23 +302,34 @@ function RedeemContent() {
         </div>
 
         {redeemError && (
-          <div className="mb-6 p-4 bg-red-50 border
-                          border-red-200 rounded text-red-700">
+          <div
+            className="mb-6 p-4 bg-red-50 border
+                       border-red-200 rounded text-red-700"
+          >
             {redeemError}
           </div>
         )}
 
         {pageData.link.link_type === "solo" ? (
           <SoloRedeemForm
-            onSubmit={handleSoloRedeem}
+            onSubmit={(customSlug) =>
+              submitRedemption({ customSlug })
+            }
             loading={redeeming}
           />
         ) : (
           <TeamSelector
             teams={pageData.teams}
             maxTeamSize={pageData.link.max_team_size}
-            onSelectTeam={handleSelectTeam}
-            onCreateTeam={handleCreateTeam}
+            onSelectTeam={(teamId) =>
+              submitRedemption({ teamId })
+            }
+            onCreateTeam={(teamName, expectedSize) =>
+              submitRedemption({
+                newTeamName: teamName,
+                expectedTeamSize: expectedSize,
+              })
+            }
             loading={redeeming}
           />
         )}
@@ -384,18 +340,7 @@ function RedeemContent() {
 
 export default function RedeemPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12
-                            border-b-2 border-blue-600 mx-auto mb-4">
-            </div>
-            <p className="text-gray-600">Loading...</p>
-          </div>
-        </div>
-      }
-    >
+    <Suspense fallback={<Spinner message="Loading..." />}>
       <RedeemContent />
     </Suspense>
   );

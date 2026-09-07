@@ -19,6 +19,18 @@ function many<T>(rows: readonly unknown[]): T[] {
   return rows as T[];
 }
 
+/**
+ * Postgres unique_violation (SQLSTATE 23505).
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code: unknown }).code === "23505"
+  );
+}
+
 export class RepoLinkNotFoundError extends Error {
   constructor() {
     super("Assignment link not found");
@@ -29,9 +41,20 @@ export class RepoLinkNotFoundError extends Error {
 export class RepoLinkHasRedemptionsError extends Error {
   constructor() {
     super(
-      "This assignment link has redemptions and can only be deactivated"
+      "This assignment link has redemptions and can only " +
+      "be deactivated"
     );
     this.name = "RepoLinkHasRedemptionsError";
+  }
+}
+
+export class TeamNameTakenError extends Error {
+  constructor(teamName: string) {
+    super(
+      `A team named '${teamName}' already exists for this ` +
+      "assignment. Please choose a different name."
+    );
+    this.name = "TeamNameTakenError";
   }
 }
 
@@ -237,7 +260,11 @@ export async function getRepoLinkById(
 export async function getRepoLinkByIdWithOrg(
   linkId: string
 ): Promise<
-  (RepoCreationLink & { org_name: string; installation_id: number }) | null
+  | (RepoCreationLink & {
+      org_name: string;
+      installation_id: number;
+    })
+  | null
 > {
   try {
     const result = await sql`
@@ -252,10 +279,16 @@ export async function getRepoLinkByIdWithOrg(
     `;
 
     return first<
-      RepoCreationLink & { org_name: string; installation_id: number }
+      RepoCreationLink & {
+        org_name: string;
+        installation_id: number;
+      }
     >(result);
   } catch (error) {
-    console.error("Error getting repo link with org:", error);
+    console.error(
+      "Error getting repo link with org:",
+      error
+    );
     throw error;
   }
 }
@@ -354,25 +387,28 @@ export async function isLinkExpired(
 // TEAMS
 // ============================================================================
 
+/**
+ * Create a team for a link.
+ *
+ * @throws TeamNameTakenError if (link_id, team_name) already
+ *   exists (unique constraint violation, e.g. lost a race)
+ */
 export async function createTeam(
   linkId: number,
   teamName: string,
-  expectedTeamSize: number,
-  githubTeamId?: number
+  expectedTeamSize: number
 ): Promise<Team> {
   try {
     const result = await sql`
       INSERT INTO teams (
         link_id,
         team_name,
-        expected_team_size,
-        github_team_id
+        expected_team_size
       )
       VALUES (
         ${linkId},
         ${teamName},
-        ${expectedTeamSize},
-        ${githubTeamId || null}
+        ${expectedTeamSize}
       )
       RETURNING *
     `;
@@ -385,6 +421,10 @@ export async function createTeam(
 
     return team;
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new TeamNameTakenError(teamName);
+    }
+
     console.error("Error creating team:", error);
     throw error;
   }
@@ -442,14 +482,22 @@ export async function getTeamMemberCount(
   }
 }
 
+/**
+ * Record the GitHub team ID and the slug GitHub assigned.
+ *
+ * The slug is what every subsequent GitHub call keys on, so
+ * we store the real one rather than re-deriving it.
+ */
 export async function updateTeamGithubId(
   teamId: number,
-  githubTeamId: number
+  githubTeamId: number,
+  githubTeamSlug: string
 ): Promise<Team> {
   try {
     const result = await sql`
       UPDATE teams
-      SET github_team_id = ${githubTeamId}
+      SET github_team_id = ${githubTeamId},
+          github_team_slug = ${githubTeamSlug}
       WHERE id = ${teamId}
       RETURNING *
     `;
@@ -477,11 +525,6 @@ export async function updateTeamGithubId(
  * Idempotent: only updates if repo_name is currently NULL.
  * This ensures the first member to redeem records the repo,
  * and subsequent members don't overwrite it.
- *
- * @param teamId Team ID
- * @param repoName Repository name
- * @param repoUrl Repository URL
- * @returns Updated team, or null if already set
  */
 export async function setTeamRepo(
   teamId: number,
@@ -507,10 +550,6 @@ export async function setTeamRepo(
 
 /**
  * Get a team by name within a link.
- *
- * @param linkId Link ID
- * @param teamName Team name
- * @returns Team if found, null otherwise
  */
 export async function getTeamByName(
   linkId: number,
@@ -532,10 +571,7 @@ export async function getTeamByName(
 }
 
 /**
- * Get all teams for a link with member counts.
- *
- * @param linkId Link ID
- * @returns Array of teams with member counts
+ * Get all teams for a link with DB-side member counts.
  */
 export async function getTeamsWithMemberCounts(
   linkId: number
@@ -576,17 +612,6 @@ export async function getTeamsWithMemberCounts(
 
 /**
  * Create or update student repository access.
- *
- * Extended version that includes github_login.
- *
- * @param linkId Link ID
- * @param githubId GitHub user ID
- * @param repoName Repository name
- * @param repoUrl Repository URL
- * @param accessLevel Access level (read, write, admin)
- * @param teamId Optional team ID (for group assignments)
- * @param githubLogin GitHub username
- * @returns Created/updated access record
  */
 export async function createStudentRepoAccess(
   linkId: number,
@@ -730,17 +755,45 @@ export async function getStudentRepoAccessByGithubId(
   }
 }
 
+/**
+ * Check whether a repo name is already claimed on this link,
+ * either by a student redemption or by a team.
+ *
+ * Used to stop one student from being granted access to
+ * another student's repository via a colliding slug.
+ */
+export async function isRepoNameTakenOnLink(
+  linkId: number,
+  repoName: string
+): Promise<boolean> {
+  try {
+    const result = await sql`
+      SELECT 1 AS taken
+      FROM student_repo_access
+      WHERE link_id = ${linkId}
+        AND repo_name = ${repoName}
+      UNION ALL
+      SELECT 1 AS taken
+      FROM teams
+      WHERE link_id = ${linkId}
+        AND repo_name = ${repoName}
+      LIMIT 1
+    `;
+
+    return result.length > 0;
+  } catch (error) {
+    console.error(
+      "Error checking repo name availability:",
+      error
+    );
+    throw error;
+  }
+}
+
 // ============================================================================
 // REDEMPTION CHECKS
 // ============================================================================
 
-/**
- * Check if a student has already redeemed a link.
- *
- * @param linkId Link ID
- * @param githubId GitHub user ID
- * @returns true if redeemed, false otherwise
- */
 export async function hasStudentRedeemed(
   linkId: number,
   githubId: number
@@ -763,16 +816,6 @@ export async function hasStudentRedeemed(
   }
 }
 
-/**
- * Get a student's existing redemption for a link.
- *
- * Returns the full access record if they've already redeemed,
- * or null if not.
- *
- * @param linkId Link ID
- * @param githubId GitHub user ID
- * @returns Access record if redeemed, null otherwise
- */
 export async function getStudentRedemption(
   linkId: number,
   githubId: number
@@ -955,24 +998,6 @@ export async function isLinkValid(
       : false;
   } catch (error) {
     console.error("Error checking link validity:", error);
-    throw error;
-  }
-}
-
-export async function canStudentJoinTeam(
-  teamId: number,
-  expectedTeamSize: number | null
-): Promise<boolean> {
-  if (!expectedTeamSize) {
-    return true;
-  }
-
-  try {
-    const memberCount = await getTeamMemberCount(teamId);
-
-    return memberCount < expectedTeamSize;
-  } catch (error) {
-    console.error("Error checking team capacity:", error);
     throw error;
   }
 }

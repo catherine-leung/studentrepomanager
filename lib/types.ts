@@ -42,11 +42,12 @@ export interface Team {
   link_id: number;
   team_name: string;
   github_team_id: number | null;
-  repo_name: string | null; 
-  repo_url: string | null; 
+  github_team_slug: string | null;
+  repo_name: string | null;
+  repo_url: string | null;
+  expected_team_size: number;
   created_at: string;
 }
-
 
 export interface StudentRepoAccess {
   id: number;
@@ -56,10 +57,9 @@ export interface StudentRepoAccess {
   repo_name: string;
   repo_url: string;
   access_level: "read" | "write" | "admin";
-  github_login: string | null;  // ← ADD THIS
+  github_login: string | null;
   created_at: string;
 }
-
 
 // ============================================================================
 // NextAuth Module Augmentation

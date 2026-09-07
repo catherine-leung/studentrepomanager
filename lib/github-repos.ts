@@ -39,15 +39,29 @@ export function slugify(input: string): string {
 }
 
 /**
+ * Slugify a team name the way GitHub does (approximately):
+ * lowercase, only [a-z0-9-], collapsed and trimmed hyphens.
+ *
+ * Used for collision detection and as a fallback when a
+ * team's real GitHub slug has not been recorded yet.
+ */
+export function slugifyTeamName(teamName: string): string {
+  return teamName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
  * Build a repository name from assessment name and suffix.
  *
  * Format: {slugify(assessment)}-{slugify(suffix)}
- * Max length: 100 chars (GitHub limit is 255, but we're conservative)
- * Trailing hyphens are trimmed.
+ * Max length: 100 chars (GitHub limit is 255, but we're
+ * conservative). Trailing hyphens are trimmed.
  *
  * Examples:
  *   ("Lab 1: Sorting", "alice") → "lab-1-sorting-alice"
- *   ("Very Long Assessment Name", "my-solution") → "very-long-assessment-name-my-solution"
  *   ("X", "") → "x" (suffix is empty, just use assessment)
  */
 export function buildRepoName(
@@ -137,7 +151,7 @@ function extractRepoData(data: {
  * If creation fails with 422 (name conflict), fetch and return
  * the existing repo (handles race condition).
  *
- * @param octokit Authenticated Octokit instance (app installation token)
+ * @param octokit Authenticated Octokit instance (installation)
  * @param org Organization name
  * @param name Repository name
  * @param templateRepoUrl Optional template repo URL
@@ -221,12 +235,13 @@ export async function ensureRepo(
 /**
  * Grant a user access to a repository.
  *
- * Adds the user as a collaborator with the specified permission.
- * If the user is not yet an org member, GitHub creates an invitation
- * (status 201). If they are a member, they're added directly (status 204).
+ * Adds the user as a collaborator with the specified
+ * permission. If the user is not yet an org member, GitHub
+ * creates an invitation (status 201). If they are a member,
+ * they're added directly (status 204).
  *
- * If an invitation was created (201), automatically accept it using
- * the user's OAuth token.
+ * If an invitation was created (201), automatically accept
+ * it using the user's OAuth token.
  *
  * @param appOctokit Authenticated as app (installation token)
  * @param userOctokit Authenticated as user (user OAuth token)
@@ -269,27 +284,76 @@ export async function grantAccess(
 /**
  * Create a GitHub Team in an organization.
  *
+ * If a team with this name already exists (lost a race, or
+ * the team was created outside the app), the existing team
+ * is looked up by slug and returned instead.
+ *
  * @param octokit Authenticated as app (installation token)
  * @param org Organization name
- * @param teamName Team name (will be slugified)
- * @returns GitHub team ID
- * @throws Error if team creation fails
+ * @param teamName Team name
+ * @returns GitHub team ID and the slug GitHub assigned
+ * @throws Error if team creation and lookup both fail
  */
 export async function createGitHubTeam(
   octokit: Octokit,
   org: string,
   teamName: string
+): Promise<{ id: number; slug: string }> {
+  try {
+    const { data } = await (octokit as any).request(
+      "POST /orgs/{org}/teams",
+      {
+        org,
+        name: teamName,
+        privacy: "closed",
+      }
+    );
+
+    return { id: data.id, slug: data.slug };
+  } catch (error) {
+    if (!isStatus(error, 422)) {
+      throw error;
+    }
+
+    const { data } = await (octokit as any).request(
+      "GET /orgs/{org}/teams/{team_slug}",
+      {
+        org,
+        team_slug: slugifyTeamName(teamName),
+      }
+    );
+
+    return { id: data.id, slug: data.slug };
+  }
+}
+
+/**
+ * Get the number of members in a GitHub Team.
+ *
+ * Fetches a single page of 100. Assignment teams are capped
+ * at 10 by the link creation form, so this is always enough.
+ *
+ * @param octokit Authenticated as app (installation token)
+ * @param org Organization name
+ * @param teamSlug Team slug
+ * @returns Member count
+ * @throws Error if the team cannot be read (e.g. 404)
+ */
+export async function getTeamMemberCount(
+  octokit: Octokit,
+  org: string,
+  teamSlug: string
 ): Promise<number> {
   const { data } = await (octokit as any).request(
-    "POST /orgs/{org}/teams",
+    "GET /orgs/{org}/teams/{team_slug}/members",
     {
       org,
-      name: teamName,
-      privacy: "closed",
+      team_slug: teamSlug,
+      per_page: 100,
     }
   );
 
-  return data.id;
+  return Array.isArray(data) ? data.length : 0;
 }
 
 /**

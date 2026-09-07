@@ -1,20 +1,21 @@
 // lib/redeem.ts
 
+import type { Octokit } from "@octokit/rest";
 import type { AuthContext } from "./session";
 import type { RepoCreationLink, Team } from "./types";
 import {
-  getRepoLinkById,
   getTeamsByLink,
   getTeamById,
-  getTeamMemberCount,
+  getTeamMemberCount as getDbTeamMemberCount,
   createTeam,
   updateTeamGithubId,
   setTeamRepo,
   createStudentRepoAccess,
   hasStudentRedeemed,
-  canStudentJoinTeam,
   getStudentRedemption,
-} from "./db";
+  isRepoNameTakenOnLink,
+  TeamNameTakenError,
+} from "@/lib/db";
 import {
   buildRepoName,
   ensureRepo,
@@ -23,12 +24,23 @@ import {
   addTeamMember,
   grantTeamRepoAccess,
   toGitHubPermission,
+  slugifyTeamName,
+  getTeamMemberCount as getGitHubTeamMemberCount,
 } from "./github-repos";
-import {
-  getInstallationOctokit,
-} from "./github-app";
+import { getInstallationOctokit } from "./github-app";
 import { getOctokitForUser } from "./github";
-import { isOrgMember, getOrgMembershipState } from "./org-membership";
+import {
+  isOrgMember,
+  getOrgMembershipState,
+  type MembershipState,
+} from "./org-membership";
+
+export { TeamNameTakenError };
+
+type LinkWithOrg = RepoCreationLink & {
+  org_name: string;
+  installation_id: number;
+};
 
 // ============================================================================
 // TYPED ERRORS
@@ -93,76 +105,94 @@ export class InvalidTeamChoiceError extends Error {
   }
 }
 
+export class RepoNameTakenError extends Error {
+  constructor(repoName: string) {
+    super(
+      `A repository named '${repoName}' already exists for ` +
+      "this assignment. Please choose a different name."
+    );
+    this.name = "RepoNameTakenError";
+  }
+}
+
 // ============================================================================
 // HELPERS
 // ============================================================================
 
 /**
- * Get the member count for a GitHub team.
+ * Build the GitHub team name for a link + team combination.
  *
- * @param octokit Authenticated Octokit instance
- * @param org Organization name
- * @param teamSlug Team slug
- * @returns Number of members in the team
+ * Format: {assessment_name}-{link_id}-{team_name}
+ *
+ * This ensures teams are unique org-wide, even if two links
+ * have teams with the same name.
+ *
+ * Example: "Lab 1-aBcD1234-myteam"
+ *
+ * @param assessmentName Assessment name from the link
+ * @param linkId Link ID (8-char base64url)
+ * @param teamName Team name chosen by the student
+ * @returns GitHub team name
  */
-async function getGitHubTeamMemberCount(
-  octokit: any,
-  org: string,
-  teamSlug: string
-): Promise<number> {
-  try {
-    const response = await octokit.request(
-      "GET /orgs/{org}/teams/{team_slug}/members",
-      {
-        org,
-        team_slug: teamSlug,
-        per_page: 1,
-      }
-    );
-
-    // The response headers contain the total count
-    const linkHeader = response.headers.link || "";
-    const match = linkHeader.match(/&page=(\d+)>; rel="last"/);
-    
-    if (match) {
-      return parseInt(match[1], 10);
-    }
-
-    // If no pagination, return the count of items in this page
-    return response.data.length;
-  } catch (error) {
-    console.error(
-      `Error getting GitHub team member count for ${org}/${teamSlug}:`,
-      error
-    );
-    return 0;
-  }
+function buildGitHubTeamName(
+  assessmentName: string,
+  linkId: string,
+  teamName: string
+): string {
+  return `${linkId}-${teamName}`;
 }
 
 /**
- * Convert team name to GitHub team slug.
+ * The slug used for all GitHub team API calls.
  *
- * @param teamName Team name
- * @returns GitHub team slug
+ * Prefers the slug GitHub actually assigned (recorded when the
+ * team was created). Falls back to our approximation only for
+ * teams that have not been created on GitHub yet.
  */
-function teamNameToSlug(teamName: string): string {
-  return teamName
-    .toLowerCase()
-    .replace(/[^a-z0-9-]/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "");
+function getTeamSlug(team: Team): string {
+  return team.github_team_slug ?? slugifyTeamName(team.team_name);
+}
+
+/**
+ * Resolve the current member count for a team.
+ *
+ * GitHub is the source of truth (it reflects manual changes
+ * made outside the app). If the team has no GitHub team yet,
+ * or GitHub cannot be read, fall back to the DB count instead
+ * of silently reporting 0 — a 0 would make a full team look
+ * joinable.
+ */
+async function resolveTeamMemberCount(
+  octokit: Octokit,
+  org: string,
+  team: Team
+): Promise<number> {
+  const dbCount = await getDbTeamMemberCount(team.id);
+
+  if (!team.github_team_id) {
+    return dbCount;
+  }
+
+  try {
+    return await getGitHubTeamMemberCount(
+      octokit,
+      org,
+      getTeamSlug(team)
+    );
+  } catch (error) {
+    console.error(
+      `Falling back to DB member count for team ${team.id} ` +
+      `(${org}/${getTeamSlug(team)}):`,
+      error
+    );
+    return dbCount;
+  }
 }
 
 // ============================================================================
 // VALIDATION
 // ============================================================================
 
-/**
- * Validate that a link is active and not expired.
- *
- * @throws LinkInactiveError if link is not active
- * @throws LinkExpiredError if link has expired
- */
 function validateLinkActive(
   link: RepoCreationLink
 ): void {
@@ -178,19 +208,11 @@ function validateLinkActive(
   }
 }
 
-/**
- * Validate that a user is an org member.
- *
- * @throws NotOrgMemberError if not a member
- */
 async function validateOrgMembership(
   orgName: string,
   username: string
 ): Promise<void> {
-  const isMember = await isOrgMember(
-    orgName,
-    username
-  );
+  const isMember = await isOrgMember(orgName, username);
 
   if (!isMember) {
     throw new NotOrgMemberError(orgName);
@@ -208,36 +230,26 @@ interface TeamChoice {
 }
 
 /**
- * Resolve a team choice to a team ID.
+ * Resolve a team choice to a Team row.
  *
- * For group assignments:
- * - If teamId is provided, validate it exists and has capacity
- * - If newTeamName is provided, create a new team
- * - Otherwise, throw an error
+ * - teamId: validate it belongs to this link and has capacity
+ * - newTeamName: validate size, reject slug collisions, create
+ * - solo links: no-op (returns undefined)
  *
- * For solo assignments, this is a no-op (returns undefined).
- *
- * @param link The assignment link
- * @param choice Team choice (teamId or newTeamName)
- * @param octokit Authenticated Octokit instance for GitHub API calls
- * @param orgName Organization name
- * @returns Team ID, or undefined for solo assignments
- * @throws InvalidTeamChoiceError if choice is invalid
- * @throws TeamNotFoundError if teamId doesn't exist
- * @throws TeamFullError if team is at capacity
+ * @throws InvalidTeamChoiceError, TeamNotFoundError,
+ *   TeamFullError, TeamNameTakenError
  */
 async function resolveTeam(
   link: RepoCreationLink,
   choice: TeamChoice,
-  octokit: any,
+  octokit: Octokit,
   orgName: string
 ): Promise<Team | undefined> {
   if (link.link_type === "solo") {
     return undefined;
   }
 
-  // Group assignment: must have a team choice
-  if (!choice.teamId && !choice.newTeamName) {
+  if (choice.teamId === undefined && !choice.newTeamName) {
     throw new InvalidTeamChoiceError(
       "Team ID or new team name is required " +
       "for group assignments"
@@ -245,7 +257,7 @@ async function resolveTeam(
   }
 
   // Join existing team
-  if (choice.teamId) {
+  if (choice.teamId !== undefined) {
     const team = await getTeamById(choice.teamId);
 
     if (!team) {
@@ -258,61 +270,77 @@ async function resolveTeam(
       );
     }
 
-    // Check GitHub for real member count
-    if (team.github_team_id) {
-      const teamSlug = teamNameToSlug(team.team_name);
-      const memberCount = await getGitHubTeamMemberCount(
-        octokit,
-        orgName,
-        teamSlug
-      );
+    const memberCount = await resolveTeamMemberCount(
+      octokit,
+      orgName,
+      team
+    );
 
-      const expectedSize = team.expected_team_size || 0;
-      if (memberCount >= expectedSize) {
-        throw new TeamFullError();
-      }
+    if (memberCount >= team.expected_team_size) {
+      throw new TeamFullError();
     }
 
     return team;
   }
 
   // Create new team
-  if (choice.newTeamName) {
-    if (!choice.expectedTeamSize) {
-      throw new InvalidTeamChoiceError(
-        "Expected team size is required when creating a new team"
-      );
-    }
+  const newTeamName = choice.newTeamName as string;
 
-    if (
-      !Number.isInteger(choice.expectedTeamSize) ||
-      choice.expectedTeamSize < 1
-    ) {
-      throw new InvalidTeamChoiceError(
-        "Expected team size must be a positive integer"
-      );
-    }
-
-    if (
-      link.max_team_size &&
-      choice.expectedTeamSize > link.max_team_size
-    ) {
-      throw new InvalidTeamChoiceError(
-        `Expected team size cannot exceed the maximum of ${link.max_team_size}`
-      );
-    }
-
-    const newTeam = await createTeam(
-      link.id,
-      choice.newTeamName,
-      choice.expectedTeamSize
+  if (!choice.expectedTeamSize) {
+    throw new InvalidTeamChoiceError(
+      "Expected team size is required when creating a new team"
     );
-
-    return newTeam;
   }
 
-  throw new InvalidTeamChoiceError(
-    "Invalid team choice"
+  if (
+    !Number.isInteger(choice.expectedTeamSize) ||
+    choice.expectedTeamSize < 1
+  ) {
+    throw new InvalidTeamChoiceError(
+      "Expected team size must be a positive integer"
+    );
+  }
+
+  if (
+    link.max_team_size &&
+    choice.expectedTeamSize > link.max_team_size
+  ) {
+    throw new InvalidTeamChoiceError(
+      "Expected team size cannot exceed the maximum of " +
+      `${link.max_team_size}`
+    );
+  }
+
+  const newSlug = slugifyTeamName(newTeamName);
+
+  if (!newSlug) {
+    throw new InvalidTeamChoiceError(
+      "Team name must contain at least one letter or number"
+    );
+  }
+
+  // Reject names that differ only in case/punctuation from an
+  // existing team *within this link*. They would collide on
+  // the generated repository name.
+  const existingTeams = await getTeamsByLink(link.id);
+
+  const collision = existingTeams.some(
+    (team) =>
+      slugifyTeamName(team.team_name) === newSlug ||
+      team.github_team_slug === newSlug
+  );
+
+  if (collision) {
+    throw new TeamNameTakenError(newTeamName);
+  }
+
+  // createTeam throws TeamNameTakenError on a unique violation,
+  // which covers the race where two students submit the same
+  // name at the same time within this link.
+  return createTeam(
+    link.id,
+    newTeamName,
+    choice.expectedTeamSize
   );
 }
 
@@ -331,27 +359,16 @@ export interface RedemptionResult {
 /**
  * Redeem an assignment link for a student.
  *
- * This is the main orchestration function. It:
- * 1. Validates the link (active, not expired)
- * 2. Checks org membership
- * 3. Checks for duplicate redemption (idempotency)
- * 4. Resolves team (for group assignments)
- * 5. Creates/fetches repository
- * 6. Grants access (user or team)
- * 7. Records redemption in database
- *
- * @param link The assignment link (with org_name and installation_id)
- * @param authContext User's auth context
- * @param choice Team choice (for group assignments)
- * @param customSlug Optional custom slug for solo assignments
- * @returns Redemption result with repo details
- * @throws Various typed errors (see above)
+ * 1. Validate the link (active, not expired)
+ * 2. Check org membership
+ * 3. Check for duplicate redemption (idempotency)
+ * 4. Resolve team (group) and repo name
+ * 5. Create/fetch repository
+ * 6. Grant access (user or team)
+ * 7. Record redemption
  */
 export async function redeemLink(
-  link: RepoCreationLink & {
-    org_name: string;
-    installation_id: number;
-  },
+  link: LinkWithOrg,
   authContext: AuthContext,
   choice: TeamChoice,
   customSlug?: string
@@ -365,7 +382,7 @@ export async function redeemLink(
     authContext.login
   );
 
-  // 3. Check for duplicate redemption (idempotency)
+  // 3. Idempotency
   const existing = await hasStudentRedeemed(
     link.id,
     authContext.githubId
@@ -375,7 +392,7 @@ export async function redeemLink(
     throw new AlreadyRedeemedError();
   }
 
-  // 4. Get authenticated clients
+  // 4. Clients
   const appOctokit = await getInstallationOctokit(
     link.installation_id
   );
@@ -383,7 +400,7 @@ export async function redeemLink(
     authContext.accessToken
   );
 
-  // 5. Resolve team (for group assignments)
+  // 5. Resolve team and repo name
   const team = await resolveTeam(
     link,
     choice,
@@ -391,16 +408,21 @@ export async function redeemLink(
     link.org_name
   );
 
-  // 6. Determine repo name and slug
   let repoName: string;
-  let repoSlug: string;
 
   if (link.link_type === "solo") {
-    repoSlug = customSlug || authContext.login;
     repoName = buildRepoName(
       link.assessment_name,
-      repoSlug
+      customSlug || authContext.login
     );
+
+    // Another student on this link may already own a repo
+    // with this name (same custom slug, or slugs that
+    // collapse to the same value). Never hand out access to
+    // someone else's repository.
+    if (await isRepoNameTakenOnLink(link.id, repoName)) {
+      throw new RepoNameTakenError(repoName);
+    }
   } else {
     if (!team) {
       throw new Error(
@@ -408,14 +430,13 @@ export async function redeemLink(
       );
     }
 
-    repoSlug = team.team_name;
     repoName = buildRepoName(
       link.assessment_name,
-      repoSlug
+      team.team_name
     );
   }
 
-  // 7. Ensure repo exists
+  // 6. Ensure repo exists
   const repo = await ensureRepo(
     appOctokit,
     link.org_name,
@@ -423,9 +444,8 @@ export async function redeemLink(
     link.template_repo
   );
 
-  // 8. Grant access
+  // 7. Grant access
   if (link.link_type === "solo") {
-    // Solo: add user directly as collaborator
     await grantAccess(
       appOctokit,
       userOctokit,
@@ -435,25 +455,37 @@ export async function redeemLink(
       link.access_level
     );
   } else {
-    // Group: create/update team and grant team access
     if (!team) {
       throw new Error("Team must exist for group assignment");
     }
 
-    // Create GitHub team if not already created
+    // Create the GitHub team on first redemption and record
+    // the slug GitHub assigned. The team name includes the
+    // link ID to ensure uniqueness org-wide.
     if (!team.github_team_id) {
-      const githubTeamId = await createGitHubTeam(
-        appOctokit,
-        link.org_name,
+      const githubTeamName = buildGitHubTeamName(
+        link.assessment_name,
+        link.link_id,
         team.team_name
       );
 
-      await updateTeamGithubId(team.id, githubTeamId);
-      team.github_team_id = githubTeamId;
+      const githubTeam = await createGitHubTeam(
+        appOctokit,
+        link.org_name,
+        githubTeamName
+      );
+
+      await updateTeamGithubId(
+        team.id,
+        githubTeam.id,
+        githubTeam.slug
+      );
+
+      team.github_team_id = githubTeam.id;
+      team.github_team_slug = githubTeam.slug;
     }
 
-    // Add user to GitHub team
-    const teamSlug = teamNameToSlug(team.team_name);
+    const teamSlug = getTeamSlug(team);
 
     await addTeamMember(
       appOctokit,
@@ -463,7 +495,7 @@ export async function redeemLink(
       "member"
     );
 
-    // Grant team access to repo (idempotent)
+    // Idempotent
     await grantTeamRepoAccess(
       appOctokit,
       link.org_name,
@@ -472,13 +504,13 @@ export async function redeemLink(
       toGitHubPermission(link.access_level)
     );
 
-    // Record team repo on first member (idempotent)
+    // First member records the repo (idempotent)
     if (!team.repo_name) {
       await setTeamRepo(team.id, repo.name, repo.htmlUrl);
     }
   }
 
-  // 9. Record redemption
+  // 8. Record redemption
   await createStudentRepoAccess(
     link.id,
     authContext.githubId,
@@ -498,16 +530,29 @@ export async function redeemLink(
   };
 }
 
+// ============================================================================
+// PAGE DATA
+// ============================================================================
+
 /**
- * Get redemption data for display (after successful redemption).
- *
- * This is a convenience function to fetch the full context
- * for a redemption page. It includes real GitHub member counts.
+ * The subset of a link that is safe to send to the browser.
  */
+export interface PublicLink {
+  id: number;
+  link_id: string;
+  assessment_name: string;
+  link_type: "solo" | "group";
+  access_level: "read" | "write" | "admin";
+  max_team_size: number | null;
+  expires_at: string | null;
+  is_active: boolean;
+  org_name: string;
+}
+
 export interface RedemptionPageData {
-  link: RepoCreationLink & { org_name: string; installation_id: number };
+  link: PublicLink;
   teams: (Team & { memberCount: number })[];
-  membership: "active" | "pending" | "none";
+  membership: MembershipState;
   existingRedemption?: {
     repoName: string;
     repoUrl: string;
@@ -515,11 +560,25 @@ export interface RedemptionPageData {
   };
 }
 
+function toPublicLink(link: LinkWithOrg): PublicLink {
+  return {
+    id: link.id,
+    link_id: link.link_id,
+    assessment_name: link.assessment_name,
+    link_type: link.link_type,
+    access_level: link.access_level,
+    max_team_size: link.max_team_size,
+    expires_at: link.expires_at,
+    is_active: link.is_active,
+    org_name: link.org_name,
+  };
+}
+
 export async function getRedemptionPageData(
-  link: RepoCreationLink & { org_name: string; installation_id: number },
+  link: LinkWithOrg,
   authContext: AuthContext | null
 ): Promise<RedemptionPageData> {
-  let membership: "active" | "pending" | "none" = "none";
+  let membership: MembershipState = "none";
 
   if (authContext) {
     membership = await getOrgMembershipState(
@@ -533,38 +592,25 @@ export async function getRedemptionPageData(
   if (link.link_type === "group") {
     const dbTeams = await getTeamsByLink(link.id);
 
-    // Get GitHub member counts for each team
     const appOctokit = await getInstallationOctokit(
       link.installation_id
     );
 
     teams = await Promise.all(
-      dbTeams.map(async (team) => {
-        let memberCount = 0;
-
-        // Only query GitHub if we have a github_team_id
-        if (team.github_team_id) {
-          const teamSlug = teamNameToSlug(team.team_name);
-          memberCount = await getGitHubTeamMemberCount(
-            appOctokit,
-            link.org_name,
-            teamSlug
-          );
-        }
-
-        return {
-          ...team,
-          memberCount,
-        };
-      })
+      dbTeams.map(async (team) => ({
+        ...team,
+        memberCount: await resolveTeamMemberCount(
+          appOctokit,
+          link.org_name,
+          team
+        ),
+      }))
     );
   }
 
-  let existingRedemption: {
-    repoName: string;
-    repoUrl: string;
-    cloneUrl: string;
-  } | undefined;
+  let existingRedemption:
+    | RedemptionPageData["existingRedemption"]
+    | undefined;
 
   if (authContext) {
     const access = await getStudentRedemption(
@@ -582,7 +628,7 @@ export async function getRedemptionPageData(
   }
 
   return {
-    link,
+    link: toPublicLink(link),
     teams,
     membership,
     existingRedemption,

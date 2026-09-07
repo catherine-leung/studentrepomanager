@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/session";
 import {
   getRepoLinkByIdWithOrg,
+  getStudentRedemption,
 } from "@/lib/db";
 import {
   getRedemptionPageData,
@@ -15,9 +16,39 @@ import {
   AlreadyRedeemedError,
   TeamNotFoundError,
   TeamFullError,
+  TeamNameTakenError,
   InvalidTeamChoiceError,
+  RepoNameTakenError,
 } from "@/lib/redeem";
-import { getOrgMembershipState } from "@/lib/org-membership";
+
+/**
+ * Map typed redemption errors to HTTP status codes.
+ */
+const REDEMPTION_ERROR_STATUS: ReadonlyArray<
+  [new (...args: never[]) => Error, number]
+> = [
+  [LinkNotFoundError, 404],
+  [TeamNotFoundError, 404],
+  [LinkInactiveError, 403],
+  [LinkExpiredError, 403],
+  [NotOrgMemberError, 403],
+  [InvalidTeamChoiceError, 400],
+  [TeamFullError, 409],
+  [TeamNameTakenError, 409],
+  [RepoNameTakenError, 409],
+];
+
+function statusForRedemptionError(
+  error: unknown
+): number | null {
+  for (const [ErrorClass, status] of REDEMPTION_ERROR_STATUS) {
+    if (error instanceof ErrorClass) {
+      return status;
+    }
+  }
+
+  return null;
+}
 
 /**
  * GET /api/redeem/[linkId]
@@ -26,7 +57,6 @@ import { getOrgMembershipState } from "@/lib/org-membership";
  * membership state, and any existing redemption.
  *
  * Accessible to both authenticated and unauthenticated users.
- * Unauthenticated users see membership: null.
  */
 export async function GET(
   request: NextRequest,
@@ -36,7 +66,6 @@ export async function GET(
     const { linkId } = await params;
     const authContext = await getAuthContext(request);
 
-    // Fetch link with org info
     const link = await getRepoLinkByIdWithOrg(linkId);
 
     if (!link) {
@@ -46,7 +75,6 @@ export async function GET(
       );
     }
 
-    // Get full page data
     const pageData = await getRedemptionPageData(
       link,
       authContext
@@ -78,19 +106,10 @@ export async function GET(
  *
  * Request body:
  * {
- *   teamId?: number,              // For group: join existing team
- *   newTeamName?: string,         // For group: create new team
- *   expectedTeamSize?: number,    // For group: expected size of new team
- *   customSlug?: string           // For solo: custom repo name suffix
- * }
- *
- * Returns:
- * {
- *   repoName: string,
- *   repoUrl: string,
- *   cloneUrl: string,
- *   teamId?: number,
- *   alreadyRedeemed: boolean
+ *   teamId?: number,            // group: join existing team
+ *   newTeamName?: string,       // group: create new team
+ *   expectedTeamSize?: number,  // group: size of new team
+ *   customSlug?: string         // solo: repo name suffix
  * }
  */
 export async function POST(
@@ -138,20 +157,14 @@ export async function POST(
         ? body.newTeamName.trim()
         : undefined;
 
-    if (
-      newTeamName &&
-      newTeamName.length === 0
-    ) {
+    if (newTeamName !== undefined && newTeamName.length === 0) {
       return NextResponse.json(
         { error: "Team name cannot be empty" },
         { status: 400 }
       );
     }
 
-    if (
-      newTeamName &&
-      newTeamName.length > 255
-    ) {
+    if (newTeamName && newTeamName.length > 255) {
       return NextResponse.json(
         { error: "Team name must be 255 characters or less" },
         { status: 400 }
@@ -169,7 +182,10 @@ export async function POST(
         expectedTeamSize < 1)
     ) {
       return NextResponse.json(
-        { error: "Expected team size must be a positive integer" },
+        {
+          error:
+            "Expected team size must be a positive integer",
+        },
         { status: 400 }
       );
     }
@@ -179,12 +195,12 @@ export async function POST(
         ? body.customSlug.trim()
         : undefined;
 
-    if (
-      customSlug &&
-      customSlug.length > 100
-    ) {
+    if (customSlug && customSlug.length > 100) {
       return NextResponse.json(
-        { error: "Custom slug must be 100 characters or less" },
+        {
+          error:
+            "Custom slug must be 100 characters or less",
+        },
         { status: 400 }
       );
     }
@@ -202,51 +218,15 @@ export async function POST(
     // 5. Attempt redemption
     try {
       const result = await redeemLink(
-        {
-          ...link,
-          installation_id: link.installation_id,
-        },
+        link,
         authContext,
         { teamId, newTeamName, expectedTeamSize },
-        customSlug
+        customSlug || undefined
       );
 
       return NextResponse.json(result, { status: 201 });
     } catch (redeemError) {
-      // Handle typed redemption errors
-      if (redeemError instanceof LinkNotFoundError) {
-        return NextResponse.json(
-          { error: redeemError.message },
-          { status: 404 }
-        );
-      }
-
-      if (redeemError instanceof LinkInactiveError) {
-        return NextResponse.json(
-          { error: redeemError.message },
-          { status: 403 }
-        );
-      }
-
-      if (redeemError instanceof LinkExpiredError) {
-        return NextResponse.json(
-          { error: redeemError.message },
-          { status: 403 }
-        );
-      }
-
-      if (redeemError instanceof NotOrgMemberError) {
-        return NextResponse.json(
-          { error: redeemError.message },
-          { status: 403 }
-        );
-      }
-
       if (redeemError instanceof AlreadyRedeemedError) {
-        // Fetch and return existing redemption
-        const { getStudentRedemption } =
-          await import("@/lib/db");
-
         const existing = await getStudentRedemption(
           link.id,
           authContext.githubId
@@ -265,40 +245,26 @@ export async function POST(
           );
         }
 
-        // Shouldn't happen, but handle gracefully
         return NextResponse.json(
           {
             error:
               "You have already redeemed this link, " +
               "but we could not retrieve your repository. " +
-              "Please contact support.",
+              "Please contact your instructor.",
           },
           { status: 500 }
         );
       }
 
-      if (redeemError instanceof TeamNotFoundError) {
+      const status = statusForRedemptionError(redeemError);
+
+      if (status !== null && redeemError instanceof Error) {
         return NextResponse.json(
           { error: redeemError.message },
-          { status: 404 }
+          { status }
         );
       }
 
-      if (redeemError instanceof TeamFullError) {
-        return NextResponse.json(
-          { error: redeemError.message },
-          { status: 409 }
-        );
-      }
-
-      if (redeemError instanceof InvalidTeamChoiceError) {
-        return NextResponse.json(
-          { error: redeemError.message },
-          { status: 400 }
-        );
-      }
-
-      // Re-throw unknown errors
       throw redeemError;
     }
   } catch (error) {
