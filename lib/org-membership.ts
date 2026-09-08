@@ -1,6 +1,6 @@
 // lib/org-membership.ts
 
-import { getInstallationOctokitForOrg } from "./github-app";
+import { getInstallationOctokit } from "./github-app";
 
 /**
  * Membership state in an organization.
@@ -17,11 +17,13 @@ export type MembershipState = "active" | "pending" | "none";
  * Uses the GitHub App's installation token for the org,
  * which has permission to check all members.
  *
+ * @param installationId GitHub App installation ID (avoids re-fetching)
  * @param orgName Organization name
  * @param username Username to check
  * @returns Membership state
  */
 export async function getOrgMembershipState(
+  installationId: number,
   orgName: string,
   username: string
 ): Promise<MembershipState> {
@@ -30,8 +32,8 @@ export async function getOrgMembershipState(
   }
 
   try {
-    const octokit = await getInstallationOctokitForOrg(
-      orgName
+    const octokit = await getInstallationOctokit(
+      installationId
     );
 
     const { data } = await (octokit as any).request(
@@ -63,15 +65,18 @@ export async function getOrgMembershipState(
  * Returns true only if state is "active".
  * Pending invitations return false.
  *
+ * @param installationId GitHub App installation ID
  * @param orgName Organization name
  * @param username Username to check
  * @returns true if active member, false otherwise
  */
 export async function isOrgMember(
+  installationId: number,
   orgName: string,
   username: string
 ): Promise<boolean> {
   const state = await getOrgMembershipState(
+    installationId,
     orgName,
     username
   );

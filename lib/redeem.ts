@@ -15,7 +15,8 @@ import {
   getStudentRedemption,
   isRepoNameTakenOnLink,
   TeamNameTakenError,
-  incrementLinkCurrentGroups,
+  reserveGroupSlot,
+  releaseGroupSlot,
 } from "@/lib/db";
 import {
   buildRepoName,
@@ -197,10 +198,15 @@ function validateLinkActive(
 }
 
 async function validateOrgMembership(
+  installationId: number,
   orgName: string,
   username: string
 ): Promise<void> {
-  const isMember = await isOrgMember(orgName, username);
+  const isMember = await isOrgMember(
+    installationId,
+    orgName,
+    username
+  );
 
   if (!isMember) {
     throw new NotOrgMemberError(orgName);
@@ -279,11 +285,6 @@ async function resolveTeam(
 
   const newTeamName = choice.newTeamName;
 
-  // Check if max_groups limit has been reached BEFORE creating
-  if (link.max_groups && link.current_groups >= link.max_groups) {
-    throw new MaxGroupsReachedError();
-  }
-
   if (!choice.expectedTeamSize) {
     throw new InvalidTeamChoiceError(
       "Expected team size is required when creating a new team"
@@ -332,19 +333,28 @@ async function resolveTeam(
     throw new TeamNameTakenError(newTeamName);
   }
 
-  // createTeam throws TeamNameTakenError on a unique violation,
-  // which covers the race where two students submit the same
-  // name at the same time within this link.
-  const team = await createTeam(
-    link.id,
-    newTeamName,
-    choice.expectedTeamSize
-  );
+  // Atomically reserve a group slot. The UPDATE is the arbiter
+  // of whether we've hit max_groups.
+  const reserved = await reserveGroupSlot(link.id);
 
-  // Increment current_groups now that we've created a new team
-  await incrementLinkCurrentGroups(link.id);
+  if (!reserved) {
+    throw new MaxGroupsReachedError();
+  }
 
-  return team;
+  try {
+    // createTeam throws TeamNameTakenError on a unique
+    // violation, which covers the race where two students
+    // submit the same name at the same time within this link.
+    return await createTeam(
+      link.id,
+      newTeamName,
+      choice.expectedTeamSize
+    );
+  } catch (error) {
+    // Release the slot if team creation failed
+    await releaseGroupSlot(link.id);
+    throw error;
+  }
 }
 
 // ============================================================================
@@ -445,6 +455,7 @@ export async function redeemLink(
 
   // 2. Validate org membership
   await validateOrgMembership(
+    link.installation_id,
     link.org_name,
     authContext.login
   );
@@ -658,6 +669,7 @@ export async function getRedemptionPageData(
 
   if (authContext) {
     membership = await getOrgMembershipState(
+      link.installation_id,
       link.org_name,
       authContext.login
     );
