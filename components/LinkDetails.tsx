@@ -9,7 +9,7 @@ interface LinkStats {
 }
 
 interface Redemption {
-  github_id: number;
+  github_login: string | null;
   repo_name: string;
   repo_url: string;
   access_level: string;
@@ -95,7 +95,7 @@ export function LinkDetails({ linkId }: Props) {
               <thead className="bg-gray-100">
                 <tr>
                   <th className="px-4 py-2 text-left">
-                    GitHub ID
+                    GitHub Username
                   </th>
                   <th className="px-4 py-2 text-left">
                     Repository
@@ -114,7 +114,7 @@ export function LinkDetails({ linkId }: Props) {
                                hover:bg-gray-50"
                   >
                     <td className="px-4 py-2">
-                      {r.github_id}
+                      {r.github_login || "(unknown)"}
                     </td>
                     <td className="px-4 py-2">
                       <a

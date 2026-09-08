@@ -219,6 +219,16 @@ export async function getInstallationOctokitForOrg(
 }
 
 /**
+ * The page where a user accepts a pending org invitation.
+ */
+export function getOrgInvitationUrl(org: string): string {
+  return (
+    "https://github.com/orgs/" +
+    `${encodeURIComponent(org)}/invitation`
+  );
+}
+
+/**
  * Send an organization invitation to a user.
  *
  * The user will receive a GitHub notification and can
@@ -242,33 +252,214 @@ export async function sendOrgInvitation(
   }
 
   try {
-    const app = getApp();
-    
-    // Use the app's octokit instance for this installation
-    const octokit = await app.getInstallationOctokit(
+    const octokit = await getInstallationOctokit(
       installationId
     );
 
-    // Call the API directly
-    const response = await octokit.request(
-      "POST /orgs/{org}/invitations",
+    await octokit.request("POST /orgs/{org}/invitations", {
+      org,
+      invitee_id: githubId,
+      role: "direct_member",
+    });
+
+    // The invitation response contains no URL field. Org
+    // invitations are always accepted at this fixed page.
+    return { invitationUrl: getOrgInvitationUrl(org) };
+  } catch (error) {
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error
+        ? (error as { status: unknown }).status
+        : undefined;
+
+    if (status === 422) {
+      // GitHub puts the specific reason (already a member,
+      // invitation already pending, etc.) in errors[].message.
+      const detail = (
+        error as {
+          response?: {
+            data?: { errors?: Array<{ message?: string }> };
+          };
+        }
+      ).response?.data?.errors?.[0]?.message;
+
+      throw new Error(
+        detail ??
+          "GitHub rejected the invitation " +
+          "(user may already be a member)"
+      );
+    }
+
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ORG BASE PERMISSIONS
+// ---------------------------------------------------------------------------
+
+export type BasePermission =
+  | "none"
+  | "read"
+  | "write"
+  | "admin"
+  | "unknown";
+
+function toBasePermission(value: unknown): BasePermission {
+  if (
+    value === "none" ||
+    value === "read" ||
+    value === "write" ||
+    value === "admin"
+  ) {
+    return value;
+  }
+
+  return "unknown";
+}
+
+/**
+ * Read `default_repository_permission` for an org using an
+ * arbitrary Octokit. GitHub only includes this field when the
+ * caller is authorized to see full org details; otherwise it is
+ * absent and we report "unknown".
+ */
+export async function readOrgBasePermission(
+  octokit: Octokit,
+  org: string
+): Promise<BasePermission> {
+  const { data } = await octokit.request("GET /orgs/{org}", {
+    org,
+    headers: { "Cache-Control": "no-cache" },
+  });
+
+  const value = (
+    data as { default_repository_permission?: string | null }
+  ).default_repository_permission;
+
+  return toBasePermission(value);
+}
+
+/**
+ * Fetch the org's base repository permission using the App's
+ * installation token.
+ *
+ * Returns "unknown" if GitHub withholds the field. The caller
+ * may fall back to the owner's OAuth token in that case.
+ */
+export async function getOrgBasePermission(
+  installationId: number,
+  org: string
+): Promise<BasePermission> {
+  const octokit = await getInstallationOctokit(installationId);
+  return readOrgBasePermission(octokit, org);
+}
+
+/**
+ * Deep link to the "Member privileges" settings page, where
+ * the base permission dropdown lives.
+ */
+export function getOrgSettingsUrl(org: string): string {
+  return (
+    "https://github.com/organizations/" +
+    `${encodeURIComponent(org)}/settings/member_privileges`
+  );
+}
+
+// ---------------------------------------------------------------------------
+// APP INSTALLATIONS & ROLE CHECKING (Bug 1 fix)
+// ---------------------------------------------------------------------------
+
+function isStatus(error: unknown, status: number): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status: unknown }).status === status
+  );
+}
+
+export interface AppInstallation {
+  installationId: number;
+  accountId: number;
+  accountLogin: string;
+  accountType: "Organization" | "User";
+}
+
+/**
+ * Every account the App is installed on. Uses the App JWT, so
+ * this is the authoritative list regardless of any user's
+ * OAuth scopes or an org's third-party access policy.
+ */
+export async function listAppInstallations(): Promise<
+  AppInstallation[]
+> {
+  const octokit = getGitHubAppOctokit();
+
+  const installations = await octokit.paginate(
+    octokit.rest.apps.listInstallations,
+    { per_page: 100 }
+  );
+
+  const result: AppInstallation[] = [];
+
+  for (const installation of installations) {
+    const account = installation.account;
+
+    if (
+      installation.suspended_at ||
+      !account ||
+      !("login" in account)
+    ) {
+      continue;
+    }
+
+    result.push({
+      installationId: installation.id,
+      accountId: account.id,
+      accountLogin: account.login,
+      accountType:
+        account.type === "Organization"
+          ? "Organization"
+          : "User",
+    });
+  }
+
+  return result;
+}
+
+export type OrgRole = "owner" | "member" | "none";
+
+/**
+ * Resolve a user's role in an org using the installation token.
+ * Pending invitations and non-members both resolve to "none".
+ */
+export async function getOrgRoleViaInstallation(
+  installationId: number,
+  org: string,
+  username: string
+): Promise<OrgRole> {
+  const octokit = await getInstallationOctokit(installationId);
+
+  try {
+    const { data } = await octokit.request(
+      "GET /orgs/{org}/memberships/{username}",
       {
         org,
-        invitee_id: githubId,
-        role: "direct_member",
+        username,
+        headers: { "Cache-Control": "no-cache" },
       }
     );
 
-    return { invitationUrl: (response.data as any).invitation_url };
+    if (data.state !== "active") {
+      return "none";
+    }
+
+    return data.role === "admin" ? "owner" : "member";
   } catch (error) {
-    // Check for "already a member" error
-    if (
-      error instanceof Error &&
-      error.message.includes("422")
-    ) {
-      throw new Error(
-        "User is already a member of this organization"
-      );
+    if (isStatus(error, 404)) {
+      return "none";
     }
 
     throw error;

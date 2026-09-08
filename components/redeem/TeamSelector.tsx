@@ -14,14 +14,24 @@ interface Team {
 interface Props {
   teams: Team[];
   maxTeamSize: number | null;
+  /**
+   * Whether the professor's max_groups limit still allows a
+   * new team to be created. When false, the create form is
+   * replaced with an explanatory message.
+   */
+  canCreateTeam: boolean;
   onSelectTeam: (teamId: number) => Promise<void>;
-  onCreateTeam: (teamName: string, expectedSize: number) => Promise<void>;
+  onCreateTeam: (
+    teamName: string,
+    expectedSize: number
+  ) => Promise<void>;
   loading: boolean;
 }
 
 export function TeamSelector({
   teams,
   maxTeamSize,
+  canCreateTeam,
   onSelectTeam,
   onCreateTeam,
   loading,
@@ -69,7 +79,10 @@ export function TeamSelector({
 
         {availableTeams.length === 0 ? (
           <p className="text-gray-600 mb-4">
-            No teams available to join.
+            {canCreateTeam
+              ? "No teams available to join."
+              : "No teams have open spots. Please contact " +
+                "your instructor."}
           </p>
         ) : (
           <>
@@ -97,9 +110,9 @@ export function TeamSelector({
                     <p className="font-medium">
                       {team.team_name}
                     </p>
-                    <p className="text-sm text-gray-600">
-                      {team.memberCount || 0}
-                      /{team.expected_team_size || "?"}{" "}
+                    <p className="text-xs text-gray-500">
+                      {team.memberCount ?? 0} /{" "}
+                      {team.expected_team_size ?? "?"}{" "}
                       members
                     </p>
                   </div>
@@ -124,74 +137,90 @@ export function TeamSelector({
       </div>
 
       {/* Create New Team */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-xl font-bold mb-4">
-          Create a New Team
-        </h3>
+      {canCreateTeam ? (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-xl font-bold mb-4">
+            Create a New Team
+          </h3>
 
-        <form onSubmit={handleCreateTeam}>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Team Name
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., Team A, Group 1"
-              value={newTeamName}
-              onChange={(e) =>
-                setNewTeamName(e.target.value)
+          <form onSubmit={handleCreateTeam}>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Team Name
+              </label>
+              <input
+                type="text"
+                placeholder="e.g., Team A, Group 1"
+                value={newTeamName}
+                onChange={(e) =>
+                  setNewTeamName(e.target.value)
+                }
+                maxLength={255}
+                className="w-full px-4 py-2 border
+                           border-gray-300 rounded-lg
+                           focus:outline-none
+                           focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">
+                Expected Team Size
+              </label>
+              <input
+                type="number"
+                min="1"
+                max={maxTeamSize || 100}
+                value={expectedTeamSize}
+                onChange={(e) =>
+                  setExpectedTeamSize(e.target.value)
+                }
+                className="w-full px-4 py-2 border
+                           border-gray-300 rounded-lg
+                           focus:outline-none
+                           focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                Maximum allowed by instructor:{" "}
+                <span className="font-bold">
+                  {maxTeamSize || "Unlimited"}
+                </span>
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={
+                loading ||
+                !newTeamName.trim() ||
+                !expectedTeamSize
               }
-              maxLength={255}
-              className="w-full px-4 py-2 border
-                         border-gray-300 rounded-lg
-                         focus:outline-none
-                         focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">
-              Expected Team Size
-            </label>
-            <input
-              type="number"
-              min="1"
-              max={maxTeamSize || 100}
-              value={expectedTeamSize}
-              onChange={(e) =>
-                setExpectedTeamSize(e.target.value)
-              }
-              className="w-full px-4 py-2 border
-                         border-gray-300 rounded-lg
-                         focus:outline-none
-                         focus:ring-2 focus:ring-blue-500"
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              Maximum allowed by instructor:{" "}
-              <span className="font-bold">
-                {maxTeamSize || "Unlimited"}
-              </span>
-            </p>
-          </div>
-
-          <button
-            type="submit"
-            disabled={
-              loading ||
-              !newTeamName.trim() ||
-              !expectedTeamSize
-            }
-            className="w-full bg-green-600 text-white px-6
-                       py-3 rounded-lg hover:bg-green-700
-                       transition font-medium
-                       disabled:bg-gray-400"
-          >
-            {loading
-              ? "Creating team..."
-              : "Create Team"}
-          </button>
-        </form>
-      </div>
+              className="w-full bg-green-600 text-white px-6
+                         py-3 rounded-lg hover:bg-green-700
+                         transition font-medium
+                         disabled:bg-gray-400"
+            >
+              {loading
+                ? "Creating team..."
+                : "Create Team"}
+            </button>
+          </form>
+        </div>
+      ) : (
+        <div
+          className="bg-white rounded-lg shadow p-6
+                     text-gray-600"
+        >
+          <h3 className="text-xl font-bold mb-2 text-gray-800">
+            Create a New Team
+          </h3>
+          <p>
+            The maximum number of teams for this assignment
+            has been reached. Please join an existing team
+            above.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

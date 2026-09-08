@@ -15,6 +15,7 @@ import {
   getStudentRedemption,
   isRepoNameTakenOnLink,
   TeamNameTakenError,
+  incrementLinkCurrentGroups,
 } from "@/lib/db";
 import {
   buildRepoName,
@@ -26,9 +27,9 @@ import {
   toGitHubPermission,
   slugifyTeamName,
   getTeamMemberCount as getGitHubTeamMemberCount,
+  buildGitHubTeamName,
 } from "./github-repos";
 import { getInstallationOctokit } from "./github-app";
-import { getOctokitForUser } from "./github";
 import {
   isOrgMember,
   getOrgMembershipState,
@@ -115,32 +116,19 @@ export class RepoNameTakenError extends Error {
   }
 }
 
+export class MaxGroupsReachedError extends Error {
+  constructor() {
+    super(
+      "The maximum number of groups for this assignment " +
+      "has been reached. No new groups can be created."
+    );
+    this.name = "MaxGroupsReachedError";
+  }
+}
+
 // ============================================================================
 // HELPERS
 // ============================================================================
-
-/**
- * Build the GitHub team name for a link + team combination.
- *
- * Format: {assessment_name}-{link_id}-{team_name}
- *
- * This ensures teams are unique org-wide, even if two links
- * have teams with the same name.
- *
- * Example: "Lab 1-aBcD1234-myteam"
- *
- * @param assessmentName Assessment name from the link
- * @param linkId Link ID (8-char base64url)
- * @param teamName Team name chosen by the student
- * @returns GitHub team name
- */
-function buildGitHubTeamName(
-  assessmentName: string,
-  linkId: string,
-  teamName: string
-): string {
-  return `${linkId}-${teamName}`;
-}
 
 /**
  * The slug used for all GitHub team API calls.
@@ -234,10 +222,10 @@ interface TeamChoice {
  *
  * - teamId: validate it belongs to this link and has capacity
  * - newTeamName: validate size, reject slug collisions, create
- * - solo links: no-op (returns undefined)
+ * - solo/coursedocs links: no-op (returns undefined)
  *
  * @throws InvalidTeamChoiceError, TeamNotFoundError,
- *   TeamFullError, TeamNameTakenError
+ *   TeamFullError, TeamNameTakenError, MaxGroupsReachedError
  */
 async function resolveTeam(
   link: RepoCreationLink,
@@ -245,18 +233,11 @@ async function resolveTeam(
   octokit: Octokit,
   orgName: string
 ): Promise<Team | undefined> {
-  if (link.link_type === "solo") {
+  if (link.link_type !== "group") {
     return undefined;
   }
 
-  if (choice.teamId === undefined && !choice.newTeamName) {
-    throw new InvalidTeamChoiceError(
-      "Team ID or new team name is required " +
-      "for group assignments"
-    );
-  }
-
-  // Join existing team
+  // JOINING EXISTING TEAM
   if (choice.teamId !== undefined) {
     const team = await getTeamById(choice.teamId);
 
@@ -276,15 +257,32 @@ async function resolveTeam(
       team
     );
 
-    if (memberCount >= team.expected_team_size) {
+    const capacity =
+      team.expected_team_size ??
+      link.max_team_size ??
+      Number.POSITIVE_INFINITY;
+
+    if (memberCount >= capacity) {
       throw new TeamFullError();
     }
 
+    // JUST RETURN THE TEAM - DO NOT CREATE ANYTHING
     return team;
   }
 
-  // Create new team
-  const newTeamName = choice.newTeamName as string;
+  // CREATING NEW TEAM
+  if (!choice.newTeamName) {
+    throw new InvalidTeamChoiceError(
+      "Team ID or new team name is required for group assignments"
+    );
+  }
+
+  const newTeamName = choice.newTeamName;
+
+  // Check if max_groups limit has been reached BEFORE creating
+  if (link.max_groups && link.current_groups >= link.max_groups) {
+    throw new MaxGroupsReachedError();
+  }
 
   if (!choice.expectedTeamSize) {
     throw new InvalidTeamChoiceError(
@@ -337,11 +335,80 @@ async function resolveTeam(
   // createTeam throws TeamNameTakenError on a unique violation,
   // which covers the race where two students submit the same
   // name at the same time within this link.
-  return createTeam(
+  const team = await createTeam(
     link.id,
     newTeamName,
     choice.expectedTeamSize
   );
+
+  // Increment current_groups now that we've created a new team
+  await incrementLinkCurrentGroups(link.id);
+
+  return team;
+}
+
+// ============================================================================
+// COURSEDOCS REDEMPTION
+// ============================================================================
+
+/**
+ * Coursedocs: the team and repo already exist. Add the student
+ * to the team (idempotent on GitHub's side) and record access.
+ */
+async function redeemCoursedocs(
+  link: LinkWithOrg,
+  authContext: AuthContext
+): Promise<RedemptionResult> {
+  // For coursedocs, there's exactly one team (created at link creation)
+  const teams = await getTeamsByLink(link.id);
+
+  if (teams.length === 0) {
+    throw new Error(
+      "Coursedocs link has no team. Please contact your instructor."
+    );
+  }
+
+  const team = teams[0];
+
+  if (!team.github_team_slug || !team.repo_name || !team.repo_url) {
+    throw new Error(
+      "Coursedocs team is not fully provisioned. " +
+      "Please contact your instructor."
+    );
+  }
+
+  const appOctokit = await getInstallationOctokit(
+    link.installation_id
+  );
+
+  // Add student to the pre-created team
+  await addTeamMember(
+    appOctokit,
+    link.org_name,
+    team.github_team_slug,
+    authContext.login,
+    "member"
+  );
+
+  // Record access to the pre-created repo
+  await createStudentRepoAccess(
+    link.id,
+    authContext.githubId,
+    team.repo_name,
+    team.repo_url,
+    "read",
+    team.id,
+    authContext.login
+  );
+
+  return {
+    repoName: team.repo_name,
+    repoUrl: team.repo_url,
+    cloneUrl: `git clone ${team.repo_url}`,
+    teamId: team.id,
+    alreadyRedeemed: false,
+    linkType: "coursedocs",
+  };
 }
 
 // ============================================================================
@@ -354,6 +421,7 @@ export interface RedemptionResult {
   cloneUrl: string;
   teamId?: number;
   alreadyRedeemed: boolean;
+  linkType: "solo" | "group" | "coursedocs";
 }
 
 /**
@@ -362,10 +430,9 @@ export interface RedemptionResult {
  * 1. Validate the link (active, not expired)
  * 2. Check org membership
  * 3. Check for duplicate redemption (idempotency)
- * 4. Resolve team (group) and repo name
- * 5. Create/fetch repository
- * 6. Grant access (user or team)
- * 7. Record redemption
+ * 4. For coursedocs: add to team and record access
+ * 5. For solo/group: resolve team, create/fetch repo, grant access
+ * 6. Record redemption
  */
 export async function redeemLink(
   link: LinkWithOrg,
@@ -392,15 +459,16 @@ export async function redeemLink(
     throw new AlreadyRedeemedError();
   }
 
-  // 4. Clients
+  // 4. Coursedocs: nothing to create, just join the team
+  if (link.link_type === "coursedocs") {
+    return redeemCoursedocs(link, authContext);
+  }
+
+  // 5. Solo/group: create clients and resolve team
   const appOctokit = await getInstallationOctokit(
     link.installation_id
   );
-  const userOctokit = getOctokitForUser(
-    authContext.accessToken
-  );
 
-  // 5. Resolve team and repo name
   const team = await resolveTeam(
     link,
     choice,
@@ -448,7 +516,6 @@ export async function redeemLink(
   if (link.link_type === "solo") {
     await grantAccess(
       appOctokit,
-      userOctokit,
       link.org_name,
       repo.name,
       authContext.login,
@@ -464,7 +531,6 @@ export async function redeemLink(
     // link ID to ensure uniqueness org-wide.
     if (!team.github_team_id) {
       const githubTeamName = buildGitHubTeamName(
-        link.assessment_name,
         link.link_id,
         team.team_name
       );
@@ -524,9 +590,10 @@ export async function redeemLink(
   return {
     repoName: repo.name,
     repoUrl: repo.htmlUrl,
-    cloneUrl: repo.cloneUrl,
+    cloneUrl: `git clone ${repo.htmlUrl}`,
     teamId: team?.id,
     alreadyRedeemed: false,
+    linkType: link.link_type,
   };
 }
 
@@ -536,14 +603,21 @@ export async function redeemLink(
 
 /**
  * The subset of a link that is safe to send to the browser.
+ *
+ * `max_groups` / `current_groups` let the redemption page hide
+ * the "Create New Team" form once the professor's group limit
+ * has been reached. The server still enforces the limit in
+ * resolveTeam(); this is purely a UX hint.
  */
 export interface PublicLink {
   id: number;
   link_id: string;
   assessment_name: string;
-  link_type: "solo" | "group";
+  link_type: "solo" | "group" | "coursedocs";
   access_level: "read" | "write" | "admin";
   max_team_size: number | null;
+  max_groups: number | null;
+  current_groups: number;
   expires_at: string | null;
   is_active: boolean;
   org_name: string;
@@ -568,6 +642,8 @@ function toPublicLink(link: LinkWithOrg): PublicLink {
     link_type: link.link_type,
     access_level: link.access_level,
     max_team_size: link.max_team_size,
+    max_groups: link.max_groups,
+    current_groups: link.current_groups,
     expires_at: link.expires_at,
     is_active: link.is_active,
     org_name: link.org_name,
@@ -589,6 +665,7 @@ export async function getRedemptionPageData(
 
   let teams: (Team & { memberCount: number })[] = [];
 
+  // Only load teams for group assignments, NOT coursedocs
   if (link.link_type === "group") {
     const dbTeams = await getTeamsByLink(link.id);
 

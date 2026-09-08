@@ -9,15 +9,18 @@ import { JoinOrgPrompt } from "@/components/redeem/JoinOrgPrompt";
 import { TeamSelector } from "@/components/redeem/TeamSelector";
 import { RedeemSuccess } from "@/components/redeem/RedeemSuccess";
 import { SoloRedeemForm } from "@/components/redeem/SoloRedeemForm";
+import { CoursedocsRedeemForm } from "@/components/redeem/CoursedocsRedeemForm";
 
 interface PageData {
   link: {
     id: number;
     link_id: string;
     assessment_name: string;
-    link_type: "solo" | "group";
+    link_type: "solo" | "group" | "coursedocs";
     access_level: string;
     max_team_size: number | null;
+    max_groups: number | null;
+    current_groups: number;
     expires_at: string | null;
     is_active: boolean;
     org_name: string;
@@ -37,6 +40,12 @@ interface RedemptionSummary {
   repoUrl: string;
   cloneUrl: string;
 }
+
+const TYPE_LABELS = {
+  solo: "Individual Assignment",
+  group: "Group Assignment",
+  coursedocs: "Course Documents (shared, read-only)",
+} as const;
 
 function Spinner({ message }: { message: string }) {
   return (
@@ -227,6 +236,7 @@ function RedeemContent() {
         repoUrl={pageData.existingRedemption.repoUrl}
         cloneUrl={pageData.existingRedemption.cloneUrl}
         alreadyRedeemed={true}
+        linkType={pageData.link.link_type}
       />
     );
   }
@@ -238,6 +248,7 @@ function RedeemContent() {
         repoUrl={success.repoUrl}
         cloneUrl={success.cloneUrl}
         alreadyRedeemed={false}
+        linkType={pageData.link.link_type}
       />
     );
   }
@@ -279,6 +290,12 @@ function RedeemContent() {
     );
   }
 
+  // A null max_groups means "no limit" (legacy links created
+  // before the field existed). The server enforces this too.
+  const canCreateTeam =
+    pageData.link.max_groups === null ||
+    pageData.link.current_groups < pageData.link.max_groups;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow">
@@ -295,9 +312,7 @@ function RedeemContent() {
             {pageData.link.assessment_name}
           </h2>
           <p className="text-gray-600">
-            {pageData.link.link_type === "solo"
-              ? "Individual Assignment"
-              : "Group Assignment"}
+            {TYPE_LABELS[pageData.link.link_type]}
           </p>
         </div>
 
@@ -312,15 +327,23 @@ function RedeemContent() {
 
         {pageData.link.link_type === "solo" ? (
           <SoloRedeemForm
+            assessmentName={pageData.link.assessment_name}
             onSubmit={(customSlug) =>
               submitRedemption({ customSlug })
             }
+            loading={redeeming}
+          />
+        ) : pageData.link.link_type === "coursedocs" ? (
+          <CoursedocsRedeemForm
+            repoName={pageData.link.assessment_name}
+            onSubmit={() => submitRedemption({})}
             loading={redeeming}
           />
         ) : (
           <TeamSelector
             teams={pageData.teams}
             maxTeamSize={pageData.link.max_team_size}
+            canCreateTeam={canCreateTeam}
             onSelectTeam={(teamId) =>
               submitRedemption({ teamId })
             }

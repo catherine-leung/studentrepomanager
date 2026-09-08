@@ -21,7 +21,7 @@ export interface RepoCreationLink {
   id: number;
   org_id: number;
   link_id: string;
-  link_type: "solo" | "group";
+  link_type: "solo" | "group" | "coursedocs";
   template_repo: string | null;
   assessment_name: string;
   access_level: "read" | "write" | "admin";
@@ -45,7 +45,7 @@ export interface Team {
   github_team_slug: string | null;
   repo_name: string | null;
   repo_url: string | null;
-  expected_team_size: number;
+  expected_team_size: number | null;
   created_at: string;
 }
 

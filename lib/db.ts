@@ -58,6 +58,17 @@ export class TeamNameTakenError extends Error {
   }
 }
 
+export class AssessmentNameTakenError extends Error {
+  constructor(assessmentName: string) {
+    super(
+      `An assignment named '${assessmentName}' already ` +
+      "exists in this organization. Please choose a " +
+      "different name."
+    );
+    this.name = "AssessmentNameTakenError";
+  }
+}
+
 // ============================================================================
 // ORGANIZATIONS
 // ============================================================================
@@ -160,29 +171,83 @@ export async function updateOrganizationInstallation(
 }
 
 // ============================================================================
+// LINK ID GENERATION
+// ============================================================================
+
+/**
+ * Generate an 8-char random link ID (6 bytes → base64url).
+ */
+export function generateLinkId(): string {
+  return randomBytes(6).toString("base64url");
+}
+
+// ============================================================================
 // REPO CREATION LINKS
 // ============================================================================
 
+/**
+ * Check if an assessment name already exists for an org.
+ * Returns true if it does, false otherwise.
+ */
+export async function assessmentNameExists(
+  orgId: number,
+  assessmentName: string
+): Promise<boolean> {
+  try {
+    const result = await sql`
+      SELECT 1
+      FROM repo_creation_links
+      WHERE org_id = ${orgId}
+        AND assessment_name = ${assessmentName}
+      LIMIT 1
+    `;
+
+    return result.length > 0;
+  } catch (error) {
+    console.error(
+      "Error checking assessment name:",
+      error
+    );
+    throw error;
+  }
+}
+
+/**
+ * Create a new assignment link.
+ *
+ * @throws AssessmentNameTakenError if the org already has a
+ *   link with this assessment name, regardless of link_type
+ */
 export async function createRepoLink(
   orgId: number,
-  linkType: "solo" | "group",
+  linkType: "solo" | "group" | "coursedocs",
   accessLevel: "read" | "write" | "admin",
   createdByUsername: string,
   templateRepo?: string,
   maxTeamSize?: number,
   expiresAt?: Date,
-  assessmentName?: string
+  assessmentName?: string,
+  maxGroups?: number
 ): Promise<RepoCreationLink> {
+  const linkId = generateLinkId();
+
+  const finalAssessmentName =
+    assessmentName &&
+    assessmentName.trim().length > 0
+      ? assessmentName.trim()
+      : "Assignment";
+
+  // Check if assessment name already exists for this org
+  const exists = await assessmentNameExists(
+    orgId,
+    finalAssessmentName
+  );
+
+  if (exists) {
+    throw new AssessmentNameTakenError(finalAssessmentName);
+  }
+
   try {
-    // Generate 8-char random string (6 bytes → 8 base64url chars)
-    const linkId = randomBytes(6).toString("base64url");
-
-    const finalAssessmentName =
-      assessmentName &&
-      assessmentName.trim().length > 0
-        ? assessmentName.trim()
-        : "Assignment";
-
     const result = await sql`
       INSERT INTO repo_creation_links (
         org_id,
@@ -191,6 +256,8 @@ export async function createRepoLink(
         template_repo,
         access_level,
         max_team_size,
+        max_groups,
+        current_groups,
         created_by_username,
         expires_at,
         assessment_name
@@ -202,6 +269,8 @@ export async function createRepoLink(
         ${templateRepo || null},
         ${accessLevel},
         ${maxTeamSize || null},
+        ${maxGroups || null},
+        ${linkType === "coursedocs" ? 1 : 0},
         ${createdByUsername},
         ${expiresAt || null},
         ${finalAssessmentName}
@@ -514,10 +583,6 @@ export async function updateTeamGithubId(
     throw error;
   }
 }
-
-// ============================================================================
-// TEAM REPO MANAGEMENT
-// ============================================================================
 
 /**
  * Set the repository name and URL for a team.
@@ -832,6 +897,28 @@ export async function getStudentRedemption(
   } catch (error) {
     console.error(
       "Error getting student redemption:",
+      error
+    );
+    throw error;
+  }
+}
+
+// ============================================================================
+// GROUP MANAGEMENT
+// ============================================================================
+
+export async function incrementLinkCurrentGroups(
+  linkId: number
+): Promise<void> {
+  try {
+    await sql`
+      UPDATE repo_creation_links
+      SET current_groups = current_groups + 1
+      WHERE id = ${linkId}
+    `;
+  } catch (error) {
+    console.error(
+      "Error incrementing current_groups:",
       error
     );
     throw error;

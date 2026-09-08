@@ -19,6 +19,7 @@ import {
   TeamNameTakenError,
   InvalidTeamChoiceError,
   RepoNameTakenError,
+  MaxGroupsReachedError,
 } from "@/lib/redeem";
 
 /**
@@ -36,6 +37,7 @@ const REDEMPTION_ERROR_STATUS: ReadonlyArray<
   [TeamFullError, 409],
   [TeamNameTakenError, 409],
   [RepoNameTakenError, 409],
+  [MaxGroupsReachedError, 409],
 ];
 
 function statusForRedemptionError(

@@ -9,6 +9,7 @@ interface Props {
   repoUrl: string;
   cloneUrl: string;
   alreadyRedeemed: boolean;
+  linkType?: "solo" | "group" | "coursedocs";
 }
 
 export function RedeemSuccess({
@@ -16,8 +17,11 @@ export function RedeemSuccess({
   repoUrl,
   cloneUrl,
   alreadyRedeemed,
+  linkType = "solo",
 }: Props) {
   const [copied, setCopied] = useState(false);
+
+  const isCoursedocs = linkType === "coursedocs";
 
   function copyToClipboard() {
     navigator.clipboard.writeText(cloneUrl);
@@ -57,13 +61,19 @@ export function RedeemSuccess({
           <h2 className="text-2xl font-bold text-center mb-2">
             {alreadyRedeemed
               ? "Repository Access Confirmed"
-              : "Repository Created!"}
+              : isCoursedocs
+                ? "Access Granted!"
+                : "Repository Created!"}
           </h2>
 
           <p className="text-center text-gray-600 mb-6">
             {alreadyRedeemed
               ? "You already have access to this repository."
-              : "Your repository has been created and you have been added as a collaborator."}
+              : isCoursedocs
+                ? "You have been added to the course team with " +
+                  "read access to the shared repository."
+                : "Your repository has been created and you have " +
+                  "been added as a collaborator."}
           </p>
 
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
@@ -118,8 +128,14 @@ export function RedeemSuccess({
             <ol className="text-sm text-blue-900 list-decimal
                            list-inside mt-2 space-y-1">
               <li>Clone the repository using the command above</li>
-              <li>Complete the assignment</li>
-              <li>Push your changes to GitHub</li>
+              {isCoursedocs ? (
+                <li>Run <code>git pull</code> regularly for updates</li>
+              ) : (
+                <>
+                  <li>Complete the assignment</li>
+                  <li>Push your changes to GitHub</li>
+                </>
+              )}
             </ol>
           </div>
         </div>
@@ -127,4 +143,3 @@ export function RedeemSuccess({
     </div>
   );
 }
-

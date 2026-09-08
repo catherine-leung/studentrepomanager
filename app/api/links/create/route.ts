@@ -2,7 +2,6 @@
 
 import {
   getInstallationIdForOrg,
-  getInstallationOctokit,
 } from "@/lib/github-app";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/session";
@@ -11,9 +10,17 @@ import {
   getOrganizationByName,
   createOrganization,
   createRepoLink,
+  deleteRepoLink,
+  AssessmentNameTakenError,
 } from "@/lib/db";
 import { parseTemplateRepoUrl } from "@/lib/github-repos";
+import {
+  provisionCoursedocsLink,
+  CoursedocsRepoExistsError,
+} from "@/lib/coursedocs";
 
+type LinkType = "solo" | "group" | "coursedocs";
+type AccessLevel = "read" | "write" | "admin";
 
 interface CreateLinkBody {
   orgName?: unknown;
@@ -22,21 +29,19 @@ interface CreateLinkBody {
   accessLevel?: unknown;
   templateRepoUrl?: unknown;
   maxTeamSize?: unknown;
+  maxGroups?: unknown;
   expiresInDays?: unknown;
 }
 
-function isLinkType(
-  value: unknown
-): value is "solo" | "group" {
+function isLinkType(value: unknown): value is LinkType {
   return (
     value === "solo" ||
-    value === "group"
+    value === "group" ||
+    value === "coursedocs"
   );
 }
 
-function isAccessLevel(
-  value: unknown
-): value is "read" | "write" | "admin" {
+function isAccessLevel(value: unknown): value is AccessLevel {
   return (
     value === "read" ||
     value === "write" ||
@@ -47,8 +52,8 @@ function isAccessLevel(
 class TemplateNotFoundError extends Error {
   constructor(url: string) {
     super(
-      `Repository not found: ${url}. ` +
-      "Please verify the URL is correct and the repository is public or accessible."
+      `Repository not found: ${url}. Please verify the URL ` +
+      "is correct and the repository is accessible."
     );
     this.name = "TemplateNotFoundError";
   }
@@ -57,21 +62,14 @@ class TemplateNotFoundError extends Error {
 class NotATemplateError extends Error {
   constructor(url: string) {
     super(
-      `The repository at ${url} is not marked as a template. ` +
-      "Please enable 'Template repository' in the repository settings on GitHub."
+      `The repository at ${url} is not marked as a ` +
+      "template. Please enable 'Template repository' in " +
+      "the repository settings on GitHub."
     );
     this.name = "NotATemplateError";
   }
 }
 
-/**
- * Validate that a template repository is actually a template.
- *
- * @param templateRepoUrl GitHub repository URL
- * @param installationId GitHub App installation ID (for auth)
- * @throws TemplateNotFoundError if the repo doesn't exist or can't be accessed
- * @throws NotATemplateError if the repo exists but is not a template
- */
 async function validateTemplateRepository(
   templateRepoUrl: string,
   installationId: number
@@ -80,31 +78,18 @@ async function validateTemplateRepository(
     const { owner, repo } = parseTemplateRepoUrl(
       templateRepoUrl
     );
-
-    // Use authenticated GitHub App request
+    const { getInstallationOctokit } = await import(
+      "@/lib/github-app"
+    );
     const octokit = await getInstallationOctokit(
       installationId
     );
-
     const response = await (octokit as any).request(
       "GET /repos/{owner}/{repo}",
-      {
-        owner,
-        repo,
-      }
+      { owner, repo }
     );
 
-    const data = response.data;
-
-    console.log(
-      `Template repo check for ${templateRepoUrl}: is_template=${data.is_template}`
-    );
-
-    // Check if the repository is marked as a template
-    if (data.is_template !== true) {
-      console.log(
-        `Repository ${templateRepoUrl} is not a template (is_template=${data.is_template})`
-      );
+    if (response.data.is_template !== true) {
       throw new NotATemplateError(templateRepoUrl);
     }
   } catch (error) {
@@ -115,7 +100,6 @@ async function validateTemplateRepository(
       throw error;
     }
 
-    // Check if it's a 404 error
     if (
       typeof error === "object" &&
       error !== null &&
@@ -129,10 +113,12 @@ async function validateTemplateRepository(
       "Unexpected error validating template:",
       error
     );
-    throw new Error(
-      "Failed to validate template repository"
-    );
+    throw new Error("Failed to validate template repository");
   }
+}
+
+function badRequest(message: string): NextResponse {
+  return NextResponse.json({ error: message }, { status: 400 });
 }
 
 export async function POST(request: NextRequest) {
@@ -149,12 +135,9 @@ export async function POST(request: NextRequest) {
     let body: CreateLinkBody;
 
     try {
-      body = await request.json() as CreateLinkBody;
+      body = (await request.json()) as CreateLinkBody;
     } catch {
-      return NextResponse.json(
-        { error: "Invalid JSON body" },
-        { status: 400 }
-      );
+      return badRequest("Invalid JSON body");
     }
 
     const {
@@ -164,109 +147,40 @@ export async function POST(request: NextRequest) {
       accessLevel: rawAccessLevel,
       templateRepoUrl: rawTemplateRepoUrl,
       maxTeamSize: rawMaxTeamSize,
+      maxGroups: rawMaxGroups,
       expiresInDays: rawExpiresInDays,
     } = body;
+
+    // --- Common validation --------------------------------
 
     if (
       typeof rawOrgName !== "string" ||
       rawOrgName.trim().length === 0
     ) {
-      return NextResponse.json(
-        { error: "orgName is required" },
-        { status: 400 }
-      );
+      return badRequest("orgName is required");
     }
 
     if (
       typeof rawAssessmentName !== "string" ||
       rawAssessmentName.trim().length === 0
     ) {
-      return NextResponse.json(
-        { error: "assessmentName is required" },
-        { status: 400 }
-      );
+      return badRequest("assessmentName is required");
     }
 
     if (rawAssessmentName.length > 255) {
-      return NextResponse.json(
-        {
-          error:
-            "assessmentName must be 255 characters or less",
-        },
-        { status: 400 }
+      return badRequest(
+        "assessmentName must be 255 characters or less"
       );
     }
 
     if (!isLinkType(rawLinkType)) {
-      return NextResponse.json(
-        { error: "linkType must be 'solo' or 'group'" },
-        { status: 400 }
+      return badRequest(
+        "linkType must be 'solo', 'group', or 'coursedocs'"
       );
     }
 
-    if (!isAccessLevel(rawAccessLevel)) {
-      return NextResponse.json(
-        {
-          error:
-            "accessLevel must be 'read', 'write', " +
-            "or 'admin'",
-        },
-        { status: 400 }
-      );
-    }
+    const isCoursedocs = rawLinkType === "coursedocs";
 
-    if (
-      rawTemplateRepoUrl !== undefined &&
-      rawTemplateRepoUrl !== null &&
-      typeof rawTemplateRepoUrl !== "string"
-    ) {
-      return NextResponse.json(
-        { error: "templateRepoUrl must be a string" },
-        { status: 400 }
-      );
-    }
-
-    const templateRepoUrl =
-      typeof rawTemplateRepoUrl === "string"
-        ? rawTemplateRepoUrl.trim()
-        : "";
-
-    if (
-      templateRepoUrl &&
-      !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(
-        templateRepoUrl
-      )
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "templateRepoUrl must be a valid GitHub " +
-            "repository URL",
-        },
-        { status: 400 }
-      );
-    }
-
-    const maxTeamSize = Number(rawMaxTeamSize);
-
-    if (rawLinkType === "group") {
-      if (
-        !Number.isInteger(maxTeamSize) ||
-        maxTeamSize < 2 ||
-        maxTeamSize > 10
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "maxTeamSize must be an integer " +
-              "between 2 and 10",
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Allow null/empty for optional expiry, or 1-365 if provided
     let expiresAt: Date | undefined;
 
     if (
@@ -281,24 +195,21 @@ export async function POST(request: NextRequest) {
         expiresInDays < 1 ||
         expiresInDays > 365
       ) {
-        return NextResponse.json(
-          {
-            error:
-              "expiresInDays must be an integer " +
-              "between 1 and 365, or left blank",
-          },
-          { status: 400 }
+        return badRequest(
+          "expiresInDays must be an integer between 1 and " +
+          "365, or left blank"
         );
       }
 
       expiresAt = new Date(
-        Date.now() +
-        expiresInDays * 24 * 60 * 60 * 1000
+        Date.now() + expiresInDays * 24 * 60 * 60 * 1000
       );
     }
 
     const orgName = rawOrgName.trim();
     const assessmentName = rawAssessmentName.trim();
+
+    // --- Authorization ------------------------------------
 
     const isOwner = await requireRole(
       authContext,
@@ -320,37 +231,7 @@ export async function POST(request: NextRequest) {
     const installationId =
       await getInstallationIdForOrg(orgName);
 
-    // Validate that the template repository is actually a template
-    if (templateRepoUrl) {
-      try {
-        await validateTemplateRepository(
-          templateRepoUrl,
-          installationId
-        );
-      } catch (error) {
-        if (
-          error instanceof TemplateNotFoundError ||
-          error instanceof NotATemplateError
-        ) {
-          return NextResponse.json(
-            { error: error.message },
-            { status: 400 }
-          );
-        }
-        return NextResponse.json(
-          {
-            error:
-              error instanceof Error
-                ? error.message
-                : "Failed to validate template repository",
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    let organization =
-      await getOrganizationByName(orgName);
+    let organization = await getOrganizationByName(orgName);
 
     if (!organization) {
       organization = await createOrganization(
@@ -359,25 +240,162 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- Coursedocs: pre-create team + repo -----------
+
+    if (isCoursedocs) {
+      // 1. Create the link first. A duplicate assessment
+      //    name throws AssessmentNameTakenError here and is
+      //    mapped to 409 by the outer catch.
+      const link = await createRepoLink(
+        organization.id,
+        "coursedocs",
+        "read",
+        authContext.login,
+        undefined,
+        undefined,
+        expiresAt,
+        assessmentName,
+        1
+      );
+
+      // 2. Provision GitHub team + repo
+      try {
+        await provisionCoursedocsLink({
+          linkDbId: link.id,
+          linkId: link.link_id,
+          orgName,
+          installationId,
+          assessmentName,
+        });
+      } catch (error) {
+        // GitHub resources were already rolled back inside
+        // provisionCoursedocsLink. Remove the link row too,
+        // otherwise the dashboard shows a link with no team.
+        try {
+          await deleteRepoLink(link.link_id);
+        } catch (cleanupError) {
+          console.error(
+            "Failed to remove coursedocs link " +
+            `${link.link_id} after provisioning failure:`,
+            cleanupError
+          );
+        }
+
+        if (error instanceof CoursedocsRepoExistsError) {
+          return NextResponse.json(
+            { error: error.message },
+            { status: 409 }
+          );
+        }
+
+        throw error;
+      }
+
+      return NextResponse.json(link, { status: 201 });
+    }
+
+    // --- Solo / group validation --------------------------
+
+    if (!isAccessLevel(rawAccessLevel)) {
+      return badRequest(
+        "accessLevel must be 'read', 'write', or 'admin'"
+      );
+    }
+
+    if (
+      rawTemplateRepoUrl !== undefined &&
+      rawTemplateRepoUrl !== null &&
+      typeof rawTemplateRepoUrl !== "string"
+    ) {
+      return badRequest("templateRepoUrl must be a string");
+    }
+
+    const templateRepoUrl =
+      typeof rawTemplateRepoUrl === "string"
+        ? rawTemplateRepoUrl.trim()
+        : "";
+
+    if (
+      templateRepoUrl &&
+      !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(
+        templateRepoUrl
+      )
+    ) {
+      return badRequest(
+        "templateRepoUrl must be a valid GitHub repository URL"
+      );
+    }
+
+    const maxTeamSize = Number(rawMaxTeamSize);
+    const maxGroups = Number(rawMaxGroups);
+
+    if (rawLinkType === "group") {
+      if (
+        !Number.isInteger(maxTeamSize) ||
+        maxTeamSize < 2 ||
+        maxTeamSize > 10
+      ) {
+        return badRequest(
+          "maxTeamSize must be an integer between 2 and 10"
+        );
+      }
+
+      if (
+        !Number.isInteger(maxGroups) ||
+        maxGroups < 1 ||
+        maxGroups > 1000
+      ) {
+        return badRequest(
+          "maxGroups must be an integer between 1 and 1000"
+        );
+      }
+    }
+
+    if (templateRepoUrl) {
+      try {
+        await validateTemplateRepository(
+          templateRepoUrl,
+          installationId
+        );
+      } catch (error) {
+        return badRequest(
+          error instanceof Error
+            ? error.message
+            : "Failed to validate template repository"
+        );
+      }
+    }
+
     const link = await createRepoLink(
       organization.id,
       rawLinkType,
       rawAccessLevel,
       authContext.login,
       templateRepoUrl || undefined,
-      rawLinkType === "group"
-        ? maxTeamSize
-        : undefined,
+      rawLinkType === "group" ? maxTeamSize : undefined,
       expiresAt,
-      assessmentName
+      assessmentName,
+      rawLinkType === "group" ? maxGroups : undefined
     );
 
     return NextResponse.json(link, { status: 201 });
   } catch (error) {
-    console.error(
-      "Error in POST /api/links/create:",
-      error
-    );
+    // Map typed errors to HTTP status codes
+    if (error instanceof AssessmentNameTakenError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 409 }
+      );
+    }
+
+    if (error instanceof CoursedocsRepoExistsError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 409 }
+      );
+    }
+
+    console.error("Error in POST /api/links/create:", error);
 
     return NextResponse.json(
       {

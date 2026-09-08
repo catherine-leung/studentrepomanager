@@ -3,17 +3,25 @@
 "use client";
 
 import { useState } from "react";
+import { buildRepoName } from "@/lib/github-repos";
 
 interface Props {
+  assessmentName: string;
   onSubmit: (customSlug?: string) => Promise<void>;
   loading: boolean;
 }
 
 export function SoloRedeemForm({
+  assessmentName,
   onSubmit,
   loading,
 }: Props) {
   const [customSlug, setCustomSlug] = useState("");
+
+  const previewRepoName = buildRepoName(
+    assessmentName,
+    customSlug || "your-username"
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -45,7 +53,7 @@ export function SoloRedeemForm({
           Your repository name will be:
           <span className="font-mono font-bold">
             {" "}
-            assignment-{customSlug || "your-username"}
+            {previewRepoName}
           </span>
         </p>
       </div>

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { OrganizationSelector } from "@/components/OrganizationSelector";
 import { LinkCreationForm } from "@/components/LinkCreationForm";
 import { LinksList } from "@/components/LinksList";
+import { OrgPermissionsStatus } from "@/components/OrgPermissionsStatus";
 
 export default function Dashboard() {
   const { data: session, status } = useSession();
@@ -62,6 +63,7 @@ export default function Dashboard() {
 
         {selectedOrg && (
           <>
+            <OrgPermissionsStatus orgName={selectedOrg} />
             <LinkCreationForm
               orgName={selectedOrg}
               onSuccess={() =>

@@ -11,6 +11,13 @@ interface Props {
   onContinue: () => void;
 }
 
+function orgInvitationUrl(orgName: string): string {
+  return (
+    "https://github.com/orgs/" +
+    `${encodeURIComponent(orgName)}/invitation`
+  );
+}
+
 export function JoinOrgPrompt({
   linkId,
   orgName,
@@ -19,9 +26,11 @@ export function JoinOrgPrompt({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A pending invitation already exists on GitHub; skip
+  // straight to the "accept it" step.
   const [invitationUrl, setInvitationUrl] = useState<
     string | null
-  >(null);
+  >(membership === "pending" ? orgInvitationUrl(orgName) : null);
   const [checking, setChecking] = useState(false);
 
   async function handleSendInvitation() {
@@ -56,10 +65,12 @@ export function JoinOrgPrompt({
 
   async function handleCheckMembership() {
     setChecking(true);
+    setError(null);
 
     try {
       const response = await fetch(
-        `/api/redeem/${linkId}`
+        `/api/redeem/${linkId}`,
+        { cache: "no-store" }
       );
 
       if (!response.ok) {
@@ -142,8 +153,13 @@ export function JoinOrgPrompt({
           ) : (
             <>
               <p className="text-gray-600 mb-4">
-                An invitation has been sent to your GitHub
-                account. Click the link below to accept it:
+                {membership === "pending"
+                  ? "You already have a pending invitation " +
+                    "to this organization. Click the link " +
+                    "below to accept it:"
+                  : "An invitation has been sent to your " +
+                    "GitHub account. Click the link below " +
+                    "to accept it:"}
               </p>
 
               <a

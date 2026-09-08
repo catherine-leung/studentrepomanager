@@ -2,6 +2,8 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { createOrganization } from "@/lib/db";
+import { getInstallationOctokit } from "@/lib/github-app";
 
 /**
  * Verify GitHub webhook signature.
@@ -50,19 +52,82 @@ function verifyWebhookSignature(
   return timingSafeEqual(givenBuffer, expectedBuffer);
 }
 
+/**
+ * Configure organization settings for security and app
+ * functionality. Called automatically when the app is
+ * installed on an org.
+ */
+async function configureOrgSettings(
+  installationId: number,
+  orgName: string
+): Promise<void> {
+  try {
+    console.log(
+      `[configureOrgSettings] Starting for ${orgName} ` +
+      `(installationId: ${installationId})`
+    );
+
+    const octokit = await getInstallationOctokit(
+      installationId
+    );
+
+    console.log(
+      `[configureOrgSettings] Got octokit, making PATCH request`
+    );
+
+    await octokit.request("PATCH /orgs/{org}", {
+      org: orgName,
+      // Base permissions: students only see repos they're granted
+      default_repository_permission: "none",
+      // Disable repo creation by members
+      members_can_create_repositories: false,
+      // Disable public repo creation
+      members_can_create_public_repositories: false,
+      // Disable private repo creation
+      members_can_create_private_repositories: false,
+      // Disable repo visibility changes
+      members_can_change_repo_visibility: false,
+      // Disable repo deletion
+      members_can_delete_repositories: false,
+      // Disable repo transfer
+      members_can_transfer_repositories: false,
+      // Disable team creation
+      members_can_create_teams: false,
+
+    });
+
+    console.log(
+      `[configureOrgSettings] Successfully configured ` +
+      `org settings for ${orgName}`
+    );
+  } catch (error) {
+    console.error(
+      `[configureOrgSettings] Failed to configure ` +
+      `org settings for ${orgName}:`,
+      error
+    );
+    // Don't throw — installation should succeed even if
+    // this fails. The professor can fix it manually.
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
+    console.log("[webhook] ===== WEBHOOK POST CALLED =====");
+
     // 1. Get the raw body (required for signature verification)
     const body = await req.text();
+    console.log("[webhook] Body received, length:", body.length);
 
     // 2. Get the signature header
     const signature =
       req.headers.get("x-hub-signature-256") || "";
+    console.log("[webhook] Signature header present:", !!signature);
 
     // 3. Verify the signature
     if (!verifyWebhookSignature(body, signature)) {
       console.warn(
-        "Webhook signature verification failed; " +
+        "[webhook] Webhook signature verification failed; " +
         "rejecting request"
       );
       return NextResponse.json(
@@ -71,11 +136,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    console.log("[webhook] Signature verified");
+
     // 4. Parse the body
     let payload;
     try {
       payload = JSON.parse(body);
+      console.log("[webhook] Payload parsed successfully");
     } catch {
+      console.error("[webhook] Failed to parse JSON");
       return NextResponse.json(
         { error: "Invalid JSON" },
         { status: 400 }
@@ -84,42 +153,123 @@ export async function POST(req: NextRequest) {
 
     // 5. Get the event type
     const event = req.headers.get("x-github-event");
+    console.log("[webhook] Event type:", event);
+    console.log("[webhook] Event action:", payload.action);
 
-    console.log(`Webhook received: ${event}`, {
-      action: payload.action,
-      repository: payload.repository?.name,
-    });
+    // 6. Handle installation events
+    if (event === "installation") {
+      console.log("=== INSTALLATION EVENT ===");
+      console.log("Payload action:", payload.action);
+      console.log("Installation:", payload.installation);
+      console.log("Account:", payload.installation?.account);
 
-    // 6. Handle specific events
-    // (Add event handlers here as needed)
+      const action = payload.action;
+      const installation = payload.installation;
+      const account = payload.installation?.account;
 
-    switch (event) {
-      case "installation":
-        // Handle app installation/uninstallation
-        // TODO: Invalidate cached installation_id if deleted/suspended
+      console.log("Action:", action);
+      console.log("Installation ID:", installation?.id);
+      console.log("Account login:", account?.login);
+      console.log("Account type:", account?.type);
+
+      if (!installation || !account) {
         console.log(
-          `Installation event: ${payload.action}`
+          "EARLY RETURN: Missing installation or account"
         );
-        break;
+        return NextResponse.json({ ok: true });
+      }
 
-      case "repository":
-        // Handle repository events
+      const installationId = installation.id;
+      const accountLogin = account.login;
+      const accountType = account.type;
+
+      console.log("Proceeding with:", {
+        installationId,
+        accountLogin,
+        accountType,
+      });
+
+      // Only handle organization installations
+      if (accountType !== "Organization") {
         console.log(
-          `Repository event: ${payload.action}`
+          `SKIPPING: Not an organization (type: ${accountType})`
         );
-        break;
+        return NextResponse.json({ ok: true });
+      }
 
-      default:
-        // Ignore other events
-        break;
+      if (action === "created") {
+        console.log(
+          `App installed on organization: ${accountLogin}`
+        );
+
+        try {
+          // 1. Record the org in the database
+          console.log("Creating organization in DB...");
+          await createOrganization(accountLogin, installationId);
+          console.log("Organization created in DB");
+
+          // 2. Configure org settings for security
+          console.log("Configuring organization settings...");
+          await configureOrgSettings(
+            installationId,
+            accountLogin
+          );
+          console.log("Organization settings configured");
+
+          return NextResponse.json({
+            ok: true,
+            message: `Installed on ${accountLogin}`,
+          });
+        } catch (err) {
+          console.error(
+            "ERROR in installation.created handler:",
+            err
+          );
+          throw err;
+        }
+      }
+
+      if (action === "deleted") {
+        console.log(
+          `App uninstalled from organization: ${accountLogin}`
+        );
+        return NextResponse.json({
+          ok: true,
+          message: `Uninstalled from ${accountLogin}`,
+        });
+      }
+
+      if (action === "suspended") {
+        console.log(
+          `App suspended on organization: ${accountLogin}`
+        );
+        return NextResponse.json({
+          ok: true,
+          message: `Suspended on ${accountLogin}`,
+        });
+      }
+
+      if (action === "unsuspended") {
+        console.log(
+          `App unsuspended on organization: ${accountLogin}`
+        );
+        return NextResponse.json({
+          ok: true,
+          message: `Unsuspended on ${accountLogin}`,
+        });
+      }
+
+      console.log("Action not recognized:", action);
     }
 
+    // 7. Ignore other events
+    console.log("[webhook] Ignoring event type:", event);
     return NextResponse.json({
       ok: true,
       event,
     });
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error("[webhook] Unhandled error:", error);
 
     return NextResponse.json(
       {

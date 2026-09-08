@@ -4,10 +4,28 @@
 
 import { useState } from "react";
 
+type LinkType = "solo" | "group" | "coursedocs";
+type AccessLevel = "read" | "write" | "admin";
+
 interface Props {
   orgName: string;
   onSuccess: () => void;
 }
+
+const INITIAL_FORM = {
+  assessmentName: "",
+  linkType: "solo" as LinkType,
+  accessLevel: "write" as AccessLevel,
+  templateRepoUrl: "",
+  maxTeamSize: "4",
+  maxGroups: "10",
+  expiresInDays: "124",
+};
+
+const INPUT_CLASS =
+  "w-full px-4 py-2 border border-gray-300 rounded-lg " +
+  "focus:outline-none focus:ring-2 focus:ring-blue-500 " +
+  "disabled:bg-gray-100 disabled:text-gray-500";
 
 export function LinkCreationForm({
   orgName,
@@ -16,15 +34,10 @@ export function LinkCreationForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [formData, setFormData] = useState(INITIAL_FORM);
 
-  const [formData, setFormData] = useState({
-    assessmentName: "",
-    linkType: "solo" as "solo" | "group",
-    accessLevel: "write" as "read" | "write" | "admin",
-    templateRepoUrl: "",
-    maxTeamSize: "4",
-    expiresInDays: "124",
-  });
+  const isCoursedocs = formData.linkType === "coursedocs";
+  const isGroup = formData.linkType === "group";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -32,7 +45,6 @@ export function LinkCreationForm({
     setError(null);
     setSuccess(false);
 
-    // Validate assessment name
     if (!formData.assessmentName.trim()) {
       setError("Assessment name is required");
       setLoading(false);
@@ -43,6 +55,10 @@ export function LinkCreationForm({
       const maxTeamSize = formData.maxTeamSize
         ? Number(formData.maxTeamSize)
         : 4;
+
+      const maxGroups = formData.maxGroups
+        ? Number(formData.maxGroups)
+        : 10;
 
       const expiresInDays = formData.expiresInDays
         ? Number(formData.expiresInDays)
@@ -55,29 +71,25 @@ export function LinkCreationForm({
           orgName,
           assessmentName: formData.assessmentName,
           linkType: formData.linkType,
-          accessLevel: formData.accessLevel,
-          templateRepoUrl: formData.templateRepoUrl,
+          accessLevel: isCoursedocs
+            ? "read"
+            : formData.accessLevel,
+          templateRepoUrl: isCoursedocs
+            ? ""
+            : formData.templateRepoUrl,
           maxTeamSize,
+          maxGroups,
           expiresInDays,
         }),
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(
-          data.error || "Failed to create link"
-        );
+        throw new Error(data.error || "Failed to create link");
       }
 
       setSuccess(true);
-      setFormData({
-        assessmentName: "",
-        linkType: "solo",
-        accessLevel: "write",
-        templateRepoUrl: "",
-        maxTeamSize: "4",
-        expiresInDays: "124",
-      });
+      setFormData(INITIAL_FORM);
 
       setTimeout(() => {
         onSuccess();
@@ -101,15 +113,19 @@ export function LinkCreationForm({
       </h2>
 
       {error && (
-        <div className="mb-4 p-4 bg-red-50 border border-red-200
-                        rounded text-red-700">
+        <div
+          className="mb-4 p-4 bg-red-50 border border-red-200
+                     rounded text-red-700"
+        >
           {error}
         </div>
       )}
 
       {success && (
-        <div className="mb-4 p-4 bg-green-50 border
-                        border-green-200 rounded text-green-700">
+        <div
+          className="mb-4 p-4 bg-green-50 border
+                     border-green-200 rounded text-green-700"
+        >
           Link created successfully!
         </div>
       )}
@@ -128,13 +144,13 @@ export function LinkCreationForm({
               assessmentName: e.target.value,
             })
           }
-          className="w-full px-4 py-2 border border-gray-300
-                     rounded-lg focus:outline-none
-                     focus:ring-2 focus:ring-blue-500"
+          className={INPUT_CLASS}
           required
         />
         <p className="text-xs text-gray-500 mt-1">
-          Used to identify the assignment
+          {isCoursedocs
+            ? "Also used as the shared repository and team name"
+            : "Used to identify the assignment"}
         </p>
       </div>
 
@@ -148,15 +164,16 @@ export function LinkCreationForm({
             onChange={(e) =>
               setFormData({
                 ...formData,
-                linkType: e.target.value as "solo" | "group",
+                linkType: e.target.value as LinkType,
               })
             }
-            className="w-full px-4 py-2 border border-gray-300
-                       rounded-lg focus:outline-none
-                       focus:ring-2 focus:ring-blue-500"
+            className={INPUT_CLASS}
           >
             <option value="solo">Individual</option>
             <option value="group">Group</option>
+            <option value="coursedocs">
+              Course Documents (shared, read-only)
+            </option>
           </select>
         </div>
 
@@ -165,26 +182,39 @@ export function LinkCreationForm({
             Access Level
           </label>
           <select
-            value={formData.accessLevel}
+            value={isCoursedocs ? "read" : formData.accessLevel}
+            disabled={isCoursedocs}
             onChange={(e) =>
               setFormData({
                 ...formData,
-                accessLevel: e.target.value as
-                  | "read"
-                  | "write"
-                  | "admin",
+                accessLevel: e.target.value as AccessLevel,
               })
             }
-            className="w-full px-4 py-2 border border-gray-300
-                       rounded-lg focus:outline-none
-                       focus:ring-2 focus:ring-blue-500"
+            className={INPUT_CLASS}
           >
             <option value="read">Read</option>
             <option value="write">Write</option>
             <option value="admin">Admin</option>
           </select>
+          {isCoursedocs && (
+            <p className="text-xs text-gray-500 mt-1">
+              Course documents are always read-only
+            </p>
+          )}
         </div>
       </div>
+
+      {isCoursedocs && (
+        <div
+          className="mb-4 p-4 bg-blue-50 border border-blue-200
+                     rounded text-sm text-blue-900"
+        >
+          A private repository and a team will be created{" "}
+          <strong>now</strong>. Every student who redeems
+          the link joins that team and gets read access to
+          the same repository.
+        </div>
+      )}
 
       <div className="mb-4">
         <label className="block text-sm font-medium mb-2">
@@ -192,48 +222,75 @@ export function LinkCreationForm({
         </label>
         <input
           type="text"
-          placeholder="https://github.com/org/template-repo"
-          value={formData.templateRepoUrl}
+          placeholder={
+            isCoursedocs
+              ? "Not available for course documents"
+              : "https://github.com/org/template-repo"
+          }
+          value={isCoursedocs ? "" : formData.templateRepoUrl}
+          disabled={isCoursedocs}
           onChange={(e) =>
             setFormData({
               ...formData,
               templateRepoUrl: e.target.value,
             })
           }
-          className="w-full px-4 py-2 border border-gray-300
-                     rounded-lg focus:outline-none
-                     focus:ring-2 focus:ring-blue-500"
+          className={INPUT_CLASS}
         />
       </div>
 
-      {formData.linkType === "group" && (
-        <div className="mb-4">
-          <label className="block text-sm font-medium mb-2">
-            Max Team Size
-          </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="2-10"
-            value={formData.maxTeamSize}
-            onChange={(e) => {
-              const val = e.target.value;
-              // Allow empty string or numeric input
-              if (val === "" || /^\d+$/.test(val)) {
-                setFormData({
-                  ...formData,
-                  maxTeamSize: val,
-                });
-              }
-            }}
-            className="w-full px-4 py-2 border border-gray-300
-                       rounded-lg focus:outline-none
-                       focus:ring-2 focus:ring-blue-500"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            2–10 students per team
-          </p>
-        </div>
+      {isGroup && (
+        <>
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">
+              Max Team Size
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="2-10"
+              value={formData.maxTeamSize}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "" || /^\d+$/.test(val)) {
+                  setFormData({
+                    ...formData,
+                    maxTeamSize: val,
+                  });
+                }
+              }}
+              className={INPUT_CLASS}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              2–10 students per team
+            </p>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">
+              Max Number of Groups
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="e.g., 10"
+              value={formData.maxGroups}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === "" || /^\d+$/.test(val)) {
+                  setFormData({
+                    ...formData,
+                    maxGroups: val,
+                  });
+                }
+              }}
+              className={INPUT_CLASS}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Maximum number of teams students can create
+            </p>
+          </div>
+        </>
       )}
 
       <div className="mb-6">
@@ -247,7 +304,6 @@ export function LinkCreationForm({
           value={formData.expiresInDays}
           onChange={(e) => {
             const val = e.target.value.trim();
-            // Allow empty string (no expiration) or numeric input
             if (val === "" || /^\d+$/.test(val)) {
               setFormData({
                 ...formData,
@@ -255,9 +311,7 @@ export function LinkCreationForm({
               });
             }
           }}
-          className="w-full px-4 py-2 border border-gray-300
-                     rounded-lg focus:outline-none
-                     focus:ring-2 focus:ring-blue-500"
+          className={INPUT_CLASS}
         />
         <p className="text-xs text-gray-500 mt-1">
           1–365 days, or leave blank for no expiration
@@ -271,7 +325,11 @@ export function LinkCreationForm({
                    rounded-lg hover:bg-blue-700 transition
                    disabled:bg-gray-400"
       >
-        {loading ? "Creating..." : "Create Link"}
+        {loading
+          ? isCoursedocs
+            ? "Creating team and repository..."
+            : "Creating..."
+          : "Create Link"}
       </button>
     </form>
   );

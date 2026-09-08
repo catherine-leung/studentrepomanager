@@ -15,6 +15,15 @@ interface Props {
   ) => void;
 }
 
+const TYPE_LABELS: Record<
+  RepoCreationLink["link_type"],
+  string
+> = {
+  solo: "Individual Assignment",
+  group: "Group Assignment",
+  coursedocs: "Course Documents (shared, read-only)",
+};
+
 export function LinkCard({
   link,
   onDelete,
@@ -157,10 +166,8 @@ export function LinkCard({
           </h3>
 
           <p className="text-sm text-gray-600">
-            {link.link_type === "solo"
-              ? "Individual Assignment"
-              : "Group Assignment"}{" "}
-            • ID: {link.link_id}
+            {TYPE_LABELS[link.link_type]} • ID:{" "}
+            {link.link_id}
           </p>
         </div>
 

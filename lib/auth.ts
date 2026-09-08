@@ -19,7 +19,7 @@ export const authOptions: NextAuthOptions = {
       allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
-          scope: "read:user user:email read:org repo:invite",
+          scope: "read:user user:email",
         },
       },
     }),

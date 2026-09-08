@@ -1,32 +1,45 @@
 // lib/role-detection.ts
 
-import { getOctokitForUser } from "./github";
 import type { AuthContext } from "./session";
+import { getOrganizationByName } from "./db";
+import {
+  getInstallationIdForOrg,
+  getOrgRoleViaInstallation,
+} from "./github-app";
 
 export type UserRole = "owner" | "member" | "none";
 
+/**
+ * Resolve a user's role in an org using the installation token.
+ * This is immune to OAuth App restrictions and third-party
+ * access policies.
+ */
 export async function getUserRole(
   authContext: AuthContext | null,
   orgName: string
 ): Promise<UserRole> {
-  if (!authContext?.accessToken) {
+  if (!authContext) {
     return "none";
   }
 
   try {
-    const octokit = getOctokitForUser(
-      authContext.accessToken
+    // Prefer the cached installation id; fall back to GitHub.
+    const org = await getOrganizationByName(orgName);
+    const installationId =
+      org?.installation_id ??
+      (await getInstallationIdForOrg(orgName));
+
+    return await getOrgRoleViaInstallation(
+      installationId,
+      orgName,
+      authContext.login
     );
-
-    const response = await octokit.orgs.getMembershipForUser({
-      org: orgName,
-      username: authContext.login,
-    });
-
-    return response.data.role === "admin"
-      ? "owner"
-      : "member";
-  } catch {
+  } catch (error) {
+    console.error(
+      `Role check failed for ${authContext.login} ` +
+      `in ${orgName}:`,
+      error
+    );
     return "none";
   }
 }
@@ -36,20 +49,14 @@ export async function requireRole(
   orgName: string,
   requiredRole: UserRole
 ): Promise<boolean> {
-  const userRole = await getUserRole(
-    authContext,
-    orgName
-  );
+  const userRole = await getUserRole(authContext, orgName);
 
   if (requiredRole === "owner") {
     return userRole === "owner";
   }
 
   if (requiredRole === "member") {
-    return (
-      userRole === "owner" ||
-      userRole === "member"
-    );
+    return userRole === "owner" || userRole === "member";
   }
 
   return false;

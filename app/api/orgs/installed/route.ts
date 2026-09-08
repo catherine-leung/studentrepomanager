@@ -1,18 +1,12 @@
 // app/api/orgs/installed/route.ts
 
-import { NextResponse } from "next/server";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/session";
 import { createOrganization } from "@/lib/db";
-import { getOctokitForUser } from "@/lib/github";
 import {
-  getInstallationIdForOrg,
+  listAppInstallations,
+  getOrgRoleViaInstallation,
 } from "@/lib/github-app";
-
-interface GitHubOrganization {
-  login: string;
-  id: number;
-}
 
 interface OwnedOrganization {
   login: string;
@@ -31,74 +25,55 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const userOctokit = getOctokitForUser(
-      authContext.accessToken
+    // 1. Where is the App installed? (App JWT, not user token)
+    const installations = await listAppInstallations();
+
+    const orgInstallations = installations.filter(
+      (inst) => inst.accountType === "Organization"
     );
 
-    // Get all organizations the user is an admin of
-    const userOrganizationsResponse =
-      await userOctokit.orgs.listForAuthenticatedUser({
-        per_page: 100,
-      });
-
-    const userOrganizations =
-      userOrganizationsResponse.data as GitHubOrganization[];
-
-    // For each org, check if the app is installed
-    // and if the user is an owner
-    const ownedOrganizations = await Promise.all(
-      userOrganizations.map(
-        async (
-          organization
-        ): Promise<OwnedOrganization | null> => {
+    // 2. Of those, which does this user own? (installation token)
+    const checked = await Promise.all(
+      orgInstallations.map(
+        async (inst): Promise<OwnedOrganization | null> => {
           try {
-            // Check if user is an admin of this org
-            const membership =
-              await userOctokit.orgs.getMembershipForUser({
-                org: organization.login,
-                username: authContext.login,
-              });
+            const role = await getOrgRoleViaInstallation(
+              inst.installationId,
+              inst.accountLogin,
+              authContext.login
+            );
 
-            if (membership.data.role !== "admin") {
+            if (role !== "owner") {
               return null;
             }
 
-            // Check if app is installed on this org
-            const installationId =
-              await getInstallationIdForOrg(
-                organization.login
-              );
-
             return {
-              login: organization.login,
-              id: organization.id,
-              installation_id: installationId,
+              login: inst.accountLogin,
+              id: inst.accountId,
+              installation_id: inst.installationId,
             };
           } catch (error) {
-            // App not installed on this org, or user
-            // is not an admin — skip it
+            // Log skipped orgs so the issue is visible
+            console.error(
+              `Skipping ${inst.accountLogin}: ` +
+              `role check failed`,
+              error
+            );
             return null;
           }
         }
       )
     );
 
-    const organizations = ownedOrganizations.filter(
-      (
-        organization
-      ): organization is OwnedOrganization => {
-        return organization !== null;
-      }
+    const organizations = checked.filter(
+      (org): org is OwnedOrganization => org !== null
     );
 
-    // Upsert all orgs into the database
+    // 3. Keep installation_id fresh in the DB
     await Promise.all(
-      organizations.map((organization) => {
-        return createOrganization(
-          organization.login,
-          organization.installation_id
-        );
-      })
+      organizations.map((org) =>
+        createOrganization(org.login, org.installation_id)
+      )
     );
 
     return NextResponse.json(organizations);

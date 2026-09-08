@@ -240,11 +240,12 @@ export async function ensureRepo(
  * creates an invitation (status 201). If they are a member,
  * they're added directly (status 204).
  *
- * If an invitation was created (201), automatically accept
- * it using the user's OAuth token.
+ * Note: redeemLink() enforces org membership first, so 201
+ * should never happen. If it does, we log a warning instead
+ * of trying to auto-accept (which would require repo:invite
+ * scope).
  *
  * @param appOctokit Authenticated as app (installation token)
- * @param userOctokit Authenticated as user (user OAuth token)
  * @param org Organization name
  * @param repo Repository name
  * @param username GitHub username
@@ -253,7 +254,6 @@ export async function ensureRepo(
  */
 export async function grantAccess(
   appOctokit: Octokit,
-  userOctokit: Octokit,
   org: string,
   repo: string,
   username: string,
@@ -271,12 +271,15 @@ export async function grantAccess(
 
   // 201: invitation created (user not yet org member)
   // 204: user added directly (already org member)
-  if (response.status === 201 && response.data?.id) {
-    await (userOctokit as any).request(
-      "PATCH /user/repository_invitations/{invitation_id}",
-      {
-        invitation_id: response.data.id,
-      }
+  //
+  // redeemLink() enforces org membership first, so 201
+  // should never happen. If it does, surface it instead of
+  // failing silently or calling an API the user token
+  // cannot use.
+  if (response.status === 201) {
+    console.warn(
+      `Unexpected collaborator invitation for ${username} ` +
+      `on ${org}/${repo}; they may not be an org member.`
     );
   }
 }
@@ -410,5 +413,72 @@ export async function grantTeamRepoAccess(
       repo,
       permission,
     }
+  );
+}
+
+/**
+ * Build the GitHub team name for a link + team combination.
+ *
+ * Format: {link_id}-{team_name}
+ *
+ * Ensures teams are unique org-wide even if two links have
+ * teams with the same name. Example: "aBcD1234-myteam"
+ */
+export function buildGitHubTeamName(
+  linkId: string,
+  teamName: string
+): string {
+  return `${linkId}-${teamName}`;
+}
+
+/**
+ * Check whether a repository already exists in the org.
+ */
+export async function repoExists(
+  octokit: Octokit,
+  org: string,
+  name: string
+): Promise<boolean> {
+  try {
+    await (octokit as any).request(
+      "GET /repos/{owner}/{repo}",
+      { owner: org, repo: name }
+    );
+    return true;
+  } catch (error) {
+    if (isStatus(error, 404)) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Delete a GitHub Team. Used for rollback when coursedocs
+ * provisioning fails part-way.
+ */
+export async function deleteGitHubTeam(
+  octokit: Octokit,
+  org: string,
+  teamSlug: string
+): Promise<void> {
+  await (octokit as any).request(
+    "DELETE /orgs/{org}/teams/{team_slug}",
+    { org, team_slug: teamSlug }
+  );
+}
+
+/**
+ * Delete a repository. Requires the App's
+ * "Administration: write" permission. Used only for rollback.
+ */
+export async function deleteRepo(
+  octokit: Octokit,
+  org: string,
+  repo: string
+): Promise<void> {
+  await (octokit as any).request(
+    "DELETE /repos/{owner}/{repo}",
+    { owner: org, repo }
   );
 }

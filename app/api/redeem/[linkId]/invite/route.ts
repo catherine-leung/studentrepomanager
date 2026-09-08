@@ -63,10 +63,10 @@ export async function POST(
         { status: 200 }
       );
     } catch (error) {
-      // Check if user is already a member
+      // GitHub: "Invitee is already a part of this org"
       if (
         error instanceof Error &&
-        error.message.includes("already a member")
+        /already (a member|a part of)/i.test(error.message)
       ) {
         return NextResponse.json(
           {
