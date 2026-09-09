@@ -83,6 +83,8 @@ export async function getOrganizationByName(
       SELECT *
       FROM organizations
       WHERE org_name = ${orgName}
+      ORDER BY updated_at DESC
+      LIMIT 1
     `;
 
     return first<Organization>(result);
@@ -113,61 +115,48 @@ export async function createOrganization(
   orgName: string,
   installationId: number
 ): Promise<Organization> {
-  const result = await sql`
-    INSERT INTO organizations (
-      org_name,
-      installation_id,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      ${orgName},
-      ${installationId},
-      NOW(),
-      NOW()
-    )
-    ON CONFLICT (org_name) DO UPDATE
-      SET installation_id = ${installationId},
-          updated_at = NOW()
-    RETURNING *
-  `;
-
-  const organization = first<Organization>(result);
-
-  if (!organization) {
-    throw new Error("Failed to create organization");
-  }
-
-  return organization;
-}
-
-export async function updateOrganizationInstallation(
-  orgName: string,
-  installationId: number
-): Promise<Organization> {
   try {
-    const result = await sql`
+    // Case 1: reinstall — same org name, new installation_id.
+    // Update the existing row to use the new installation ID.
+    const updated = await sql`
       UPDATE organizations
       SET installation_id = ${installationId},
-          last_verified_at = CURRENT_TIMESTAMP
+          updated_at = NOW()
       WHERE org_name = ${orgName}
       RETURNING *
     `;
 
-    const organization = first<Organization>(result);
+    const existing = first<Organization>(updated);
+
+    if (existing) {
+      return existing;
+    }
+
+    // Case 2: brand-new org, or rename — same installation_id,
+    // new org name (ON CONFLICT updates the name in place).
+    const inserted = await sql`
+      INSERT INTO organizations (
+        org_name,
+        installation_id,
+        created_at,
+        updated_at
+      )
+      VALUES (${orgName}, ${installationId}, NOW(), NOW())
+      ON CONFLICT (installation_id) DO UPDATE
+        SET org_name = ${orgName},
+            updated_at = NOW()
+      RETURNING *
+    `;
+
+    const organization = first<Organization>(inserted);
 
     if (!organization) {
-      throw new Error(
-        "Organization was not found while updating installation"
-      );
+      throw new Error("Failed to create organization");
     }
 
     return organization;
   } catch (error) {
-    console.error(
-      "Error updating organization installation:",
-      error
-    );
+    console.error("Error creating organization:", error);
     throw error;
   }
 }
@@ -189,6 +178,9 @@ export function generateLinkId(): string {
 
 /**
  * Check if an assessment name already exists for an org.
+ * Comparison is case-insensitive to prevent collisions
+ * when slugified (e.g., "Lab 1" and "lab 1" both → "lab-1").
+ *
  * Returns true if it does, false otherwise.
  */
 export async function assessmentNameExists(
@@ -200,7 +192,7 @@ export async function assessmentNameExists(
       SELECT 1
       FROM repo_creation_links
       WHERE org_id = ${orgId}
-        AND assessment_name = ${assessmentName}
+        AND LOWER(assessment_name) = LOWER(${assessmentName})
       LIMIT 1
     `;
 
@@ -1136,6 +1128,36 @@ export async function isLinkValid(
       : false;
   } catch (error) {
     console.error("Error checking link validity:", error);
+    throw error;
+  }
+}
+
+/**
+ * Deactivate all assignment links for an organization.
+ *
+ * Used when the app is uninstalled from an org, so students
+ * don't get 500s when trying to redeem with a stale
+ * installation ID. Instead, they get a clean 403 "link is
+ * inactive".
+ *
+ * @param orgName Organization name
+ */
+export async function deactivateLinksForOrg(
+  orgName: string
+): Promise<void> {
+  try {
+    await sql`
+      UPDATE repo_creation_links AS rcl
+      SET is_active = false
+      FROM organizations AS o
+      WHERE rcl.org_id = o.id
+        AND o.org_name = ${orgName}
+    `;
+  } catch (error) {
+    console.error(
+      `Error deactivating links for org ${orgName}:`,
+      error
+    );
     throw error;
   }
 }

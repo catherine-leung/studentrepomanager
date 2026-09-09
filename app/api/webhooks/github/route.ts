@@ -2,7 +2,7 @@
 
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { createOrganization } from "@/lib/db";
+import { createOrganization, deactivateLinksForOrg } from "@/lib/db";
 import { applyOrgSecuritySettings } from "@/lib/org-settings";
 import { internalError } from "@/lib/api-errors";
 
@@ -149,10 +149,25 @@ export async function POST(req: NextRequest) {
         console.log(
           `[webhook] App uninstalled from org: ${accountLogin}`
         );
-        return NextResponse.json({
-          ok: true,
-          message: `Uninstalled from ${accountLogin}`,
-        });
+
+        try {
+          // NEW: Deactivate all links for this org so students
+          // don't get 500s when trying to redeem with a stale
+          // installation ID.
+          await deactivateLinksForOrg(accountLogin);
+
+          return NextResponse.json({
+            ok: true,
+            message: `Uninstalled from ${accountLogin}; ` +
+              `links deactivated`,
+          });
+        } catch (err) {
+          console.error(
+            `[webhook] Error in installation.deleted:`,
+            err
+          );
+          throw err;
+        }
       }
 
       if (action === "suspended") {

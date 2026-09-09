@@ -188,7 +188,10 @@ export async function cleanupCoursedocsResources(
   }
 
   if (team.repo_name) {
-    const archivedName = `${team.repo_name}-removed-${linkId}`;
+    const suffix = `-removed-${linkId}`;
+    const archivedName =
+      team.repo_name.slice(0, 100 - suffix.length) + suffix;
+
     tasks.push([
       `repo ${team.repo_name}`,
       archiveRepo(

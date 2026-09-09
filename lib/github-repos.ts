@@ -430,10 +430,13 @@ export async function deleteRepo(
  * renamed to {original}-removed-{linkId} and archived so the
  * name can be reused if the link is recreated.
  *
+ * UPDATED: Truncate the base name to ensure the final name
+ * doesn't exceed GitHub's 100-character limit.
+ *
  * @param octokit Authenticated as app (installation token)
  * @param org Organization name
  * @param repo Current repository name
- * @param newName New repository name
+ * @param newName New repository name (will be truncated if needed)
  * @throws Error if operation fails
  */
 export async function archiveRepo(
@@ -442,13 +445,17 @@ export async function archiveRepo(
   repo: string,
   newName: string
 ): Promise<void> {
+  // Ensure the new name doesn't exceed 100 chars.
+  // GitHub's limit is 255, but we're conservative.
+  const truncatedName = newName.slice(0, 100);
+
   // Rename first; archived repos reject further edits.
   await (octokit as any).request(
     "PATCH /repos/{owner}/{repo}",
     {
       owner: org,
       repo,
-      name: newName,
+      name: truncatedName,
     }
   );
 
@@ -456,8 +463,9 @@ export async function archiveRepo(
     "PATCH /repos/{owner}/{repo}",
     {
       owner: org,
-      repo: newName,
+      repo: truncatedName,
       archived: true,
     }
   );
 }
+

@@ -17,11 +17,16 @@ import {
   TeamNotFoundError,
   TeamFullError,
   TeamNameTakenError,
+  TeamNotReadyError,
   InvalidTeamChoiceError,
   RepoNameTakenError,
   MaxGroupsReachedError,
+  InvalidRepoNameError,
 } from "@/lib/redeem";
 import { internalError } from "@/lib/api-errors";
+import { slugify } from "@/lib/naming";
+
+export const maxDuration = 60;
 
 /**
  * Map typed redemption errors to HTTP status codes.
@@ -35,7 +40,9 @@ const REDEMPTION_ERROR_STATUS: ReadonlyArray<
   [LinkExpiredError, 403],
   [NotOrgMemberError, 403],
   [InvalidTeamChoiceError, 400],
+  [InvalidRepoNameError, 400],
   [TeamFullError, 409],
+  [TeamNotReadyError, 409],
   [TeamNameTakenError, 409],
   [RepoNameTakenError, 409],
   [MaxGroupsReachedError, 409],
@@ -60,6 +67,8 @@ function statusForRedemptionError(
  * membership state, and any existing redemption.
  *
  * Accessible to both authenticated and unauthenticated users.
+ * For unauthenticated users or non-members, teams are not
+ * loaded to avoid unnecessary GitHub API calls.
  */
 export async function GET(
   request: NextRequest,
@@ -194,6 +203,19 @@ export async function POST(
         {
           error:
             "Custom slug must be 100 characters or less",
+        },
+        { status: 400 }
+      );
+    }
+
+    // NEW: Validate custom slug produces at least one
+    // alphanumeric character after slugification
+    if (customSlug && !/[a-z0-9]/.test(slugify(customSlug))) {
+      return NextResponse.json(
+        {
+          error:
+            "Repository name suffix must contain at least " +
+            "one letter or number",
         },
         { status: 400 }
       );

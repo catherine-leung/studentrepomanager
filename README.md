@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Student Repo Manager
 
-## Getting Started
+Automated repository management for classroom GitHub assignments.
 
-First, run the development server:
+## Quick Start
+
+1. **[Setup Guide](./docs/SETUP.md)** — Install the GitHub App, configure your organization, and deploy
+2. **[Professor Guide](./docs/PROFESSOR.md)** — Create and manage assignment links
+3. **[Student Guide](./docs/STUDENT.md)** — Redeem links and clone repositories
+4. **[Troubleshooting](./docs/TROUBLESHOOTING.md)** — Common issues and fixes
+
+## Features
+
+- **Solo assignments** — Each student gets their own repository
+- **Group assignments** — Students form teams and share a repository
+- **Course documents** — Shared read-only repository for all students
+- **Template support** — Create repos from a template
+- **Automatic org setup** — Security settings applied on installation
+- **Idempotent redemption** — Students can redeem multiple times safely
+
+## Technology
+
+- **Frontend:** Next.js 16, React 19, Tailwind CSS
+- **Backend:** Next.js API Routes, TypeScript
+- **Database:** Neon PostgreSQL
+- **Auth:** NextAuth.js v4, GitHub OAuth
+- **GitHub Integration:** Octokit (App + REST)
+
+## Development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deployment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+See [Setup Guide](./docs/SETUP.md) for Vercel deployment instructions.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## License
 
-## Learn More
+MIT
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Open http://localhost:3000.

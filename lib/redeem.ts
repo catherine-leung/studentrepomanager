@@ -9,6 +9,7 @@ import {
   getTeamsByLink,
   getTeamById,
   getTeamMemberCount as getDbTeamMemberCount,
+  getTeamsWithMemberCounts,
   createTeam,
   updateTeamGithubId,
   setTeamRepo,
@@ -143,6 +144,45 @@ export class MaxGroupsReachedError extends Error {
     );
     this.name = "MaxGroupsReachedError";
   }
+}
+
+export class InvalidRepoNameError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidRepoNameError";
+  }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Check if an error is a specific HTTP status.
+ */
+function isStatus(error: unknown, status: number): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status: unknown }).status === status
+  );
+}
+
+/**
+ * Extract the first error detail message from a GitHub API
+ * error response.
+ */
+function githubErrorDetail(error: unknown): string | null {
+  const detail = (
+    error as {
+      response?: {
+        data?: { errors?: Array<{ message?: string }> };
+      };
+    }
+  ).response?.data?.errors?.[0]?.message;
+
+  return detail ?? null;
 }
 
 // ============================================================================
@@ -356,11 +396,12 @@ async function resolveTeam(
       );
     }
 
-    // Refuse to join a team that isn't provisioned yet
-    // (repo_name is NULL). This prevents a race where
-    // another student's repo creation fails and deletes
-    // the team row.
-    if (!team.repo_name) {
+    // UPDATED: Refuse to join a team that isn't fully
+    // provisioned yet. Both repo_name AND github_team_slug
+    // must be set. This prevents a race where another
+    // student's repo creation fails and deletes the team row,
+    // or where the GitHub team creation hasn't completed yet.
+    if (!team.repo_name || !team.github_team_slug) {
       throw new TeamNotReadyError();
     }
 
@@ -770,6 +811,17 @@ export async function redeemLink(
       throw new RepoNameTakenError(repoName);
     }
 
+    if (isStatus(error, 422)) {
+      const detail = githubErrorDetail(error);
+      throw new InvalidRepoNameError(
+        "GitHub rejected the repository request" +
+        (detail ? `: ${detail}` : "") +
+        ". The template may no longer be marked as a " +
+        "template, or the name may be invalid. Please " +
+        "contact your instructor."
+      );
+    }
+
     throw error;
   }
 }
@@ -836,6 +888,8 @@ function toPublicLink(link: LinkWithOrg): PublicLink {
  *
  * For group links, only load teams if the user is an active org
  * member (no point showing teams to someone who can't join).
+ *
+ * UPDATED: Use getTeamsWithMemberCounts() to avoid N+1 queries.
  */
 export async function getRedemptionPageData(
   link: LinkWithOrg,
@@ -861,14 +915,8 @@ export async function getRedemptionPageData(
     link.link_type === "group" &&
     membership === "active"
   ) {
-    const dbTeams = await getTeamsByLink(link.id);
-
-    teams = await Promise.all(
-      dbTeams.map(async (team) => ({
-        ...team,
-        memberCount: await getDbTeamMemberCount(team.id),
-      }))
-    );
+    // UPDATED: Single query with LEFT JOIN + GROUP BY
+    teams = await getTeamsWithMemberCounts(link.id);
   }
 
   let existingRedemption:
