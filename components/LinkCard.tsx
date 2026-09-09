@@ -208,28 +208,27 @@ export function LinkCard({
         <div className="flex gap-2">
           <input
             type="text"
-            value={`/redeem/${link.link_id}`}
+            value={
+              typeof window !== "undefined"
+                ? `${window.location.origin}/redeem/${link.link_id}`
+                : ""
+            }
             readOnly
-            className="flex-1 px-3 py-2 border
+            className="flex-1 px-4 py-2 border
                        border-gray-300 rounded text-sm
                        bg-white font-mono"
           />
           <button
             onClick={copyToClipboard}
-            className="px-3 py-2 bg-blue-600 text-white
+            className="px-4 py-2 bg-blue-600 text-white
                        text-sm rounded hover:bg-blue-700
-                       transition font-medium"
+                       transition font-medium whitespace-nowrap"
           >
             {copied ? "Copied!" : "Copy"}
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-2">
-          Full URL:{" "}
-          <span className="font-mono">
-            {typeof window !== "undefined"
-              ? `${window.location.origin}/redeem/${link.link_id}`
-              : ""}
-          </span>
+          Share this link with students
         </p>
       </div>
 
