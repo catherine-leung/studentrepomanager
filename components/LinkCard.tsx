@@ -122,11 +122,18 @@ export function LinkCard({
   }
 
   function copyToClipboard() {
+    if (typeof window === "undefined") return;
+    
     const url = `${window.location.origin}/redeem/${link.link_id}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch((err) => {
+      console.error("Failed to copy:", err);
+      setError("Failed to copy URL to clipboard");
+    });
   }
+
 
   return (
     <div
