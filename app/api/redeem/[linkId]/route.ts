@@ -21,6 +21,7 @@ import {
   RepoNameTakenError,
   MaxGroupsReachedError,
 } from "@/lib/redeem";
+import { internalError } from "@/lib/api-errors";
 
 /**
  * Map typed redemption errors to HTTP status codes.
@@ -84,19 +85,10 @@ export async function GET(
 
     return NextResponse.json(pageData);
   } catch (error) {
-    console.error(
-      "Error in GET /api/redeem/[linkId]:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch redemption data",
-      },
-      { status: 500 }
+    return internalError(
+      "GET /api/redeem/[linkId]",
+      error,
+      "Failed to fetch redemption data"
     );
   }
 }
@@ -247,14 +239,12 @@ export async function POST(
           );
         }
 
-        return NextResponse.json(
-          {
-            error:
-              "You have already redeemed this link, " +
-              "but we could not retrieve your repository. " +
-              "Please contact your instructor.",
-          },
-          { status: 500 }
+        return internalError(
+          "POST /api/redeem/[linkId] (AlreadyRedeemed)",
+          redeemError,
+          "You have already redeemed this link, but we " +
+          "could not retrieve your repository. " +
+          "Please contact your instructor."
         );
       }
 
@@ -270,19 +260,10 @@ export async function POST(
       throw redeemError;
     }
   } catch (error) {
-    console.error(
-      "Error in POST /api/redeem/[linkId]:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to redeem link",
-      },
-      { status: 500 }
+    return internalError(
+      "POST /api/redeem/[linkId]",
+      error,
+      "Failed to redeem link"
     );
   }
 }

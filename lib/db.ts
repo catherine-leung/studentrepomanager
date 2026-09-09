@@ -1,3 +1,5 @@
+import "server-only";
+
 import { neon } from "@neondatabase/serverless";
 import { randomBytes } from "crypto";
 import {
@@ -671,6 +673,19 @@ export async function getTeamsWithMemberCounts(
   }
 }
 
+/**
+ * Delete a team by ID. Used for rollback when team creation
+ * fails after the row was inserted.
+ */
+export async function deleteTeam(teamId: number): Promise<void> {
+  try {
+    await sql`DELETE FROM teams WHERE id = ${teamId}`;
+  } catch (error) {
+    console.error("Error deleting team:", error);
+    throw error;
+  }
+}
+
 // ============================================================================
 // STUDENT REPO ACCESS
 // ============================================================================
@@ -904,23 +919,59 @@ export async function getStudentRedemption(
 }
 
 // ============================================================================
-// GROUP MANAGEMENT
+// ATOMIC GROUP SLOT RESERVATION
 // ============================================================================
 
-export async function incrementLinkCurrentGroups(
+/**
+ * Atomically reserve one group slot. Returns false if the
+ * link is already at max_groups.
+ *
+ * This uses a conditional UPDATE to ensure only max_groups
+ * callers can succeed, preventing race conditions where two
+ * students both create teams and exceed the limit.
+ *
+ * @param linkId Database ID of the link
+ * @returns true if slot was reserved, false if max reached
+ */
+export async function reserveGroupSlot(
+  linkId: number
+): Promise<boolean> {
+  try {
+    const result = await sql`
+      UPDATE repo_creation_links
+      SET current_groups = current_groups + 1
+      WHERE id = ${linkId}
+        AND (
+          max_groups IS NULL
+          OR current_groups < max_groups
+        )
+      RETURNING id
+    `;
+
+    return result.length > 0;
+  } catch (error) {
+    console.error("Error reserving group slot:", error);
+    throw error;
+  }
+}
+
+/**
+ * Release a group slot if team creation failed after
+ * reserving. Uses GREATEST to prevent negative counts.
+ *
+ * @param linkId Database ID of the link
+ */
+export async function releaseGroupSlot(
   linkId: number
 ): Promise<void> {
   try {
     await sql`
       UPDATE repo_creation_links
-      SET current_groups = current_groups + 1
+      SET current_groups = GREATEST(current_groups - 1, 0)
       WHERE id = ${linkId}
     `;
   } catch (error) {
-    console.error(
-      "Error incrementing current_groups:",
-      error
-    );
+    console.error("Error releasing group slot:", error);
     throw error;
   }
 }
@@ -1085,65 +1136,6 @@ export async function isLinkValid(
       : false;
   } catch (error) {
     console.error("Error checking link validity:", error);
-    throw error;
-  }
-}
-// Add to lib/db.ts after the GROUP MANAGEMENT section
-
-// ============================================================================
-// ATOMIC GROUP SLOT RESERVATION
-// ============================================================================
-
-/**
- * Atomically reserve one group slot. Returns false if the
- * link is already at max_groups.
- *
- * This uses a conditional UPDATE to ensure only max_groups
- * callers can succeed, preventing race conditions where two
- * students both create teams and exceed the limit.
- *
- * @param linkId Database ID of the link
- * @returns true if slot was reserved, false if max reached
- */
-export async function reserveGroupSlot(
-  linkId: number
-): Promise<boolean> {
-  try {
-    const result = await sql`
-      UPDATE repo_creation_links
-      SET current_groups = current_groups + 1
-      WHERE id = ${linkId}
-        AND (
-          max_groups IS NULL
-          OR current_groups < max_groups
-        )
-      RETURNING id
-    `;
-
-    return result.length > 0;
-  } catch (error) {
-    console.error("Error reserving group slot:", error);
-    throw error;
-  }
-}
-
-/**
- * Release a group slot if team creation failed after
- * reserving. Uses GREATEST to prevent negative counts.
- *
- * @param linkId Database ID of the link
- */
-export async function releaseGroupSlot(
-  linkId: number
-): Promise<void> {
-  try {
-    await sql`
-      UPDATE repo_creation_links
-      SET current_groups = GREATEST(current_groups - 1, 0)
-      WHERE id = ${linkId}
-    `;
-  } catch (error) {
-    console.error("Error releasing group slot:", error);
     throw error;
   }
 }

@@ -8,6 +8,7 @@ import {
   getLinkStats,
   getLinkRedemptions,
 } from "@/lib/db";
+import { internalError } from "@/lib/api-errors";
 
 export async function GET(
   request: NextRequest,
@@ -59,18 +60,10 @@ export async function GET(
 
     return NextResponse.json({ stats, redemptions });
   } catch (error) {
-    console.error(
-      "Error in GET /api/links/[linkId]/stats:",
-      error
-    );
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch link stats",
-      },
-      { status: 500 }
+    return internalError(
+      "GET /api/links/[linkId]/stats",
+      error,
+      "Failed to fetch link stats"
     );
   }
 }

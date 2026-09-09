@@ -1,115 +1,28 @@
 // lib/github-repos.ts
 
+import "server-only";
+
 import type { Octokit } from "@octokit/rest";
+import {
+  slugify,
+  slugifyTeamName,
+  buildRepoName,
+  parseTemplateRepoUrl,
+  buildGitHubTeamName,
+  toGitHubPermission,
+  type AccessLevel,
+  type GitHubPermission,
+} from "./naming";
 
-export type AccessLevel = "read" | "write" | "admin";
-export type GitHubPermission = "pull" | "push" | "admin";
-
-/**
- * Convert our access level to GitHub's permission model.
- */
-export function toGitHubPermission(
-  level: AccessLevel
-): GitHubPermission {
-  switch (level) {
-    case "read":
-      return "pull";
-    case "write":
-      return "push";
-    case "admin":
-      return "admin";
-  }
-}
-
-/**
- * Slugify a string: lowercase, replace non-alphanumeric
- * with hyphens, trim hyphens, collapse multiple hyphens.
- *
- * Examples:
- *   "Lab 1: Sorting" → "lab-1-sorting"
- *   "My Solution!!!" → "my-solution"
- *   "---test---" → "test"
- */
-export function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
-}
-
-/**
- * Slugify a team name the way GitHub does (approximately):
- * lowercase, only [a-z0-9-], collapsed and trimmed hyphens.
- *
- * Used for collision detection and as a fallback when a
- * team's real GitHub slug has not been recorded yet.
- */
-export function slugifyTeamName(teamName: string): string {
-  return teamName
-    .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-{2,}/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-/**
- * Build a repository name from assessment name and suffix.
- *
- * Format: {slugify(assessment)}-{slugify(suffix)}
- * Max length: 100 chars (GitHub limit is 255, but we're
- * conservative). Trailing hyphens are trimmed.
- *
- * Examples:
- *   ("Lab 1: Sorting", "alice") → "lab-1-sorting-alice"
- *   ("X", "") → "x" (suffix is empty, just use assessment)
- */
-export function buildRepoName(
-  assessmentName: string,
-  suffix: string
-): string {
-  const base = slugify(assessmentName) || "assignment";
-  const tail = slugify(suffix);
-
-  if (!tail) {
-    return base.slice(0, 100);
-  }
-
-  const combined = `${base}-${tail}`;
-  return combined
-    .slice(0, 100)
-    .replace(/-+$/, "");
-}
-
-/**
- * Parse a GitHub repository URL into owner and repo name.
- *
- * Accepts:
- *   https://github.com/owner/repo
- *   https://github.com/owner/repo/
- *   https://github.com/owner/repo.git
- *
- * Throws if the URL is invalid.
- */
-export function parseTemplateRepoUrl(
-  url: string
-): { owner: string; repo: string } {
-  const match = url.match(
-    /^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/
-  );
-
-  if (!match) {
-    throw new Error(
-      "Invalid template repository URL. " +
-      "Expected: https://github.com/owner/repo"
-    );
-  }
-
-  return {
-    owner: match[1],
-    repo: match[2],
-  };
-}
+export type { AccessLevel, GitHubPermission };
+export {
+  slugify,
+  slugifyTeamName,
+  buildRepoName,
+  parseTemplateRepoUrl,
+  buildGitHubTeamName,
+  toGitHubPermission,
+};
 
 /**
  * Check if an error is a specific HTTP status.
@@ -131,11 +44,17 @@ function isStatus(
 /**
  * Extract repo metadata from GitHub API response.
  */
+export interface RepoInfo {
+  name: string;
+  htmlUrl: string;
+  cloneUrl: string;
+}
+
 function extractRepoData(data: {
   name: string;
   html_url: string;
   clone_url: string;
-}): { name: string; htmlUrl: string; cloneUrl: string } {
+}): RepoInfo {
   return {
     name: data.name,
     htmlUrl: data.html_url,
@@ -144,48 +63,93 @@ function extractRepoData(data: {
 }
 
 /**
- * Ensure a repository exists, creating it if necessary.
+ * Check if a 422 error is specifically a "name already
+ * exists" error. GitHub returns 422 for many reasons
+ * (invalid name, template no longer marked as template,
+ * repo limit reached, org policy). We only want to treat
+ * "already exists" as a name collision.
+ */
+function isNameTakenError(error: unknown): boolean {
+  const errors =
+    (
+      error as {
+        response?: {
+          data?: { errors?: Array<{ message?: string }> };
+        };
+      }
+    ).response?.data?.errors ?? [];
+
+  return errors.some((e) =>
+    /already exists/i.test(e.message ?? "")
+  );
+}
+
+// ============================================================================
+// REPO OPERATIONS
+// ============================================================================
+
+/**
+ * Fetch a repo, or null if it does not exist.
  *
- * If the repo already exists, return its details.
- * If it doesn't exist, create it (from template if provided).
- * If creation fails with 422 (name conflict), fetch and return
- * the existing repo (handles race condition).
+ * @param octokit Authenticated Octokit instance
+ * @param org Organization name
+ * @param name Repository name
+ * @returns Repository info, or null if 404
+ * @throws Error on other failures
+ */
+export async function getRepo(
+  octokit: Octokit,
+  org: string,
+  name: string
+): Promise<RepoInfo | null> {
+  try {
+    const { data } = await (octokit as any).request(
+      "GET /repos/{owner}/{repo}",
+      { owner: org, repo: name }
+    );
+    return extractRepoData(data);
+  } catch (error) {
+    if (isStatus(error, 404)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+/**
+ * Error thrown when a repo name is already taken.
+ * This is a hard error: we never grant access to a
+ * pre-existing repo.
+ */
+export class RepoExistsError extends Error {
+  constructor(org: string, name: string) {
+    super(
+      `Repository ${org}/${name} already exists. ` +
+      "The app can only create new repositories."
+    );
+    this.name = "RepoExistsError";
+  }
+}
+
+/**
+ * Create a repo. Never returns a pre-existing repo: a name
+ * clash is a hard error so callers can never grant access to
+ * a repository the app did not create for this redemption.
  *
  * @param octokit Authenticated Octokit instance (installation)
  * @param org Organization name
  * @param name Repository name
  * @param templateRepoUrl Optional template repo URL
- * @returns Repository name, HTML URL, and clone URL
- * @throws Error if repo fetch/creation fails
+ * @returns Repository info
+ * @throws RepoExistsError on a 422 name conflict
+ * @throws Error on other failures
  */
-export async function ensureRepo(
+export async function createRepo(
   octokit: Octokit,
   org: string,
   name: string,
   templateRepoUrl: string | null
-): Promise<{
-  name: string;
-  htmlUrl: string;
-  cloneUrl: string;
-}> {
-  // 1. Try to fetch existing repo
-  try {
-    const { data } = await (octokit as any).request(
-      "GET /repos/{owner}/{repo}",
-      {
-        owner: org,
-        repo: name,
-      }
-    );
-    return extractRepoData(data);
-  } catch (error) {
-    if (!isStatus(error, 404)) {
-      throw error;
-    }
-    // Repo doesn't exist; proceed to creation
-  }
-
-  // 2. Create repo (from template or blank)
+): Promise<RepoInfo> {
   try {
     if (templateRepoUrl) {
       const template = parseTemplateRepoUrl(
@@ -215,19 +179,9 @@ export async function ensureRepo(
     );
     return extractRepoData(data);
   } catch (error) {
-    // Lost a race: another request created the same
-    // repo name. Fetch and return it.
-    if (isStatus(error, 422)) {
-      const { data } = await (octokit as any).request(
-        "GET /repos/{owner}/{repo}",
-        {
-          owner: org,
-          repo: name,
-        }
-      );
-      return extractRepoData(data);
+    if (isStatus(error, 422) && isNameTakenError(error)) {
+      throw new RepoExistsError(org, name);
     }
-
     throw error;
   }
 }
@@ -417,21 +371,6 @@ export async function grantTeamRepoAccess(
 }
 
 /**
- * Build the GitHub team name for a link + team combination.
- *
- * Format: {link_id}-{team_name}
- *
- * Ensures teams are unique org-wide even if two links have
- * teams with the same name. Example: "aBcD1234-myteam"
- */
-export function buildGitHubTeamName(
-  linkId: string,
-  teamName: string
-): string {
-  return `${linkId}-${teamName}`;
-}
-
-/**
  * Check whether a repository already exists in the org.
  */
 export async function repoExists(
@@ -454,8 +393,8 @@ export async function repoExists(
 }
 
 /**
- * Delete a GitHub Team. Used for rollback when coursedocs
- * provisioning fails part-way.
+ * Delete a GitHub Team. Used for rollback when team creation
+ * fails part-way.
  */
 export async function deleteGitHubTeam(
   octokit: Octokit,
@@ -470,7 +409,8 @@ export async function deleteGitHubTeam(
 
 /**
  * Delete a repository. Requires the App's
- * "Administration: write" permission. Used only for rollback.
+ * "Administration: write" permission. Used for rollback when
+ * repo creation succeeds but later steps fail.
  */
 export async function deleteRepo(
   octokit: Octokit,
@@ -480,5 +420,44 @@ export async function deleteRepo(
   await (octokit as any).request(
     "DELETE /repos/{owner}/{repo}",
     { owner: org, repo }
+  );
+}
+
+/**
+ * Archive a repository and rename it to free the original name.
+ *
+ * Used when cleaning up coursedocs resources: the repo is
+ * renamed to {original}-removed-{linkId} and archived so the
+ * name can be reused if the link is recreated.
+ *
+ * @param octokit Authenticated as app (installation token)
+ * @param org Organization name
+ * @param repo Current repository name
+ * @param newName New repository name
+ * @throws Error if operation fails
+ */
+export async function archiveRepo(
+  octokit: Octokit,
+  org: string,
+  repo: string,
+  newName: string
+): Promise<void> {
+  // Rename first; archived repos reject further edits.
+  await (octokit as any).request(
+    "PATCH /repos/{owner}/{repo}",
+    {
+      owner: org,
+      repo,
+      name: newName,
+    }
+  );
+
+  await (octokit as any).request(
+    "PATCH /repos/{owner}/{repo}",
+    {
+      owner: org,
+      repo: newName,
+      archived: true,
+    }
   );
 }

@@ -7,6 +7,9 @@ import {
   listAppInstallations,
   getOrgRoleViaInstallation,
 } from "@/lib/github-app";
+import { internalError } from "@/lib/api-errors";
+
+export const maxDuration = 60;
 
 interface OwnedOrganization {
   login: string;
@@ -78,19 +81,10 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json(organizations);
   } catch (error) {
-    console.error(
-      "Error fetching installed organizations:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch organizations",
-      },
-      { status: 500 }
+    return internalError(
+      "GET /api/orgs/installed",
+      error,
+      "Failed to fetch organizations"
     );
   }
 }

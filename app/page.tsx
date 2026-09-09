@@ -8,7 +8,16 @@ function HomeContent() {
   const { status } = useSession();
   const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") ?? "/dashboard";
+
+  // Validate callbackUrl: only allow relative paths
+  // starting with /. Reject absolute URLs and protocol-
+  // relative URLs to prevent open redirects.
+  const rawCallbackUrl = params.get("callbackUrl") ?? "";
+  const callbackUrl =
+    rawCallbackUrl.startsWith("/") &&
+    !rawCallbackUrl.startsWith("//")
+      ? rawCallbackUrl
+      : "/dashboard";
 
   useEffect(() => {
     if (status === "authenticated") {

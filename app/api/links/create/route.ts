@@ -13,11 +13,15 @@ import {
   deleteRepoLink,
   AssessmentNameTakenError,
 } from "@/lib/db";
-import { parseTemplateRepoUrl } from "@/lib/github-repos";
+import { parseTemplateRepoUrl } from "@/lib/naming";
 import {
   provisionCoursedocsLink,
   CoursedocsRepoExistsError,
 } from "@/lib/coursedocs";
+import { internalError } from "@/lib/api-errors";
+import { getInstallationOctokit } from "@/lib/github-app";
+
+export const maxDuration = 60;
 
 type LinkType = "solo" | "group" | "coursedocs";
 type AccessLevel = "read" | "write" | "admin";
@@ -77,9 +81,6 @@ async function validateTemplateRepository(
   try {
     const { owner, repo } = parseTemplateRepoUrl(
       templateRepoUrl
-    );
-    const { getInstallationOctokit } = await import(
-      "@/lib/github-app"
     );
     const octokit = await getInstallationOctokit(
       installationId
@@ -395,16 +396,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("Error in POST /api/links/create:", error);
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create link",
-      },
-      { status: 500 }
+    return internalError(
+      "POST /api/links/create",
+      error,
+      "Failed to create link"
     );
   }
 }

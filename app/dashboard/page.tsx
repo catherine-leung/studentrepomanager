@@ -6,6 +6,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { OrganizationSelector } from "@/components/OrganizationSelector";
+import { OrgSecurityBanner } from "@/components/OrgSecurityBanner";
 import { LinkCreationForm } from "@/components/LinkCreationForm";
 import { LinksList } from "@/components/LinksList";
 
@@ -62,6 +63,7 @@ export default function Dashboard() {
 
         {selectedOrg && (
           <>
+            <OrgSecurityBanner orgName={selectedOrg} />
             <LinkCreationForm
               orgName={selectedOrg}
               onSuccess={() =>

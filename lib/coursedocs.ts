@@ -1,23 +1,26 @@
 // lib/coursedocs.ts
 
+import "server-only";
+
 import type { Octokit } from "@octokit/rest";
 import {
   createTeam,
   updateTeamGithubId,
   setTeamRepo,
-  generateLinkId,
 } from "@/lib/db";
 import {
   buildRepoName,
   buildGitHubTeamName,
   createGitHubTeam,
-  ensureRepo,
+  createRepo,
   grantTeamRepoAccess,
-  repoExists,
   deleteGitHubTeam,
   deleteRepo,
+  archiveRepo,
+  type RepoInfo,
 } from "./github-repos";
 import { getInstallationOctokit } from "./github-app";
+import type { Team } from "./types";
 
 export class CoursedocsRepoExistsError extends Error {
   constructor(org: string, repoName: string) {
@@ -93,16 +96,8 @@ export async function provisionCoursedocsLink(
   const teamName = input.assessmentName;
   const repoName = buildRepoName(input.assessmentName, "");
 
-  // Check if repo already exists
-  if (await repoExists(octokit, input.orgName, repoName)) {
-    throw new CoursedocsRepoExistsError(
-      input.orgName,
-      repoName
-    );
-  }
-
   let teamSlug: string | null = null;
-  let createdRepo: string | null = null;
+  let createdRepo: RepoInfo | null = null;
 
   try {
     // 1. Create GitHub team
@@ -113,21 +108,31 @@ export async function provisionCoursedocsLink(
     );
     teamSlug = githubTeam.slug;
 
-    // 2. Create repository
-    const repo = await ensureRepo(
-      octokit,
-      input.orgName,
-      repoName,
-      null
-    );
-    createdRepo = repo.name;
+    // 2. Create repository (strict: fail if exists)
+    try {
+      createdRepo = await createRepo(
+        octokit,
+        input.orgName,
+        repoName,
+        null
+      );
+    } catch (error) {
+      // createRepo throws RepoExistsError on 422
+      if (error instanceof Error && error.name === "RepoExistsError") {
+        throw new CoursedocsRepoExistsError(
+          input.orgName,
+          repoName
+        );
+      }
+      throw error;
+    }
 
     // 3. Grant team read access to repo
     await grantTeamRepoAccess(
       octokit,
       input.orgName,
       githubTeam.slug,
-      repo.name,
+      createdRepo.name,
       "pull"
     );
 
@@ -146,14 +151,65 @@ export async function provisionCoursedocsLink(
     );
 
     // 6. Record repo on team
-    await setTeamRepo(team.id, repo.name, repo.htmlUrl);
+    await setTeamRepo(team.id, createdRepo.name, createdRepo.htmlUrl);
   } catch (error) {
     await rollbackGitHub(
       octokit,
       input.orgName,
       teamSlug,
-      createdRepo
+      createdRepo?.name ?? null
     );
     throw error;
   }
+}
+
+/**
+ * Best-effort removal of coursedocs GitHub resources after the
+ * link row has been deleted. Never throws.
+ *
+ * Deletes the team and archives (renames + archives) the repo
+ * so the name can be reused if the link is recreated.
+ */
+export async function cleanupCoursedocsResources(
+  installationId: number,
+  org: string,
+  linkId: string,
+  team: Team
+): Promise<void> {
+  const octokit = await getInstallationOctokit(installationId);
+
+  const tasks: Array<[string, Promise<void>]> = [];
+
+  if (team.github_team_slug) {
+    tasks.push([
+      `team ${team.github_team_slug}`,
+      deleteGitHubTeam(octokit, org, team.github_team_slug),
+    ]);
+  }
+
+  if (team.repo_name) {
+    const archivedName = `${team.repo_name}-removed-${linkId}`;
+    tasks.push([
+      `repo ${team.repo_name}`,
+      archiveRepo(
+        octokit,
+        org,
+        team.repo_name,
+        archivedName
+      ),
+    ]);
+  }
+
+  const results = await Promise.allSettled(
+    tasks.map(([, p]) => p)
+  );
+
+  results.forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.error(
+        `Coursedocs cleanup failed for ${tasks[i][0]}:`,
+        r.reason
+      );
+    }
+  });
 }

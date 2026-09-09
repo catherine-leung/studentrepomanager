@@ -1,5 +1,7 @@
 // lib/org-membership.ts
 
+import "server-only";
+
 import { getInstallationOctokit } from "./github-app";
 
 /**
@@ -21,6 +23,7 @@ export type MembershipState = "active" | "pending" | "none";
  * @param orgName Organization name
  * @param username Username to check
  * @returns Membership state
+ * @throws Error if GitHub is unreachable (caller should handle)
  */
 export async function getOrgMembershipState(
   installationId: number,
@@ -54,8 +57,21 @@ export async function getOrgMembershipState(
       ? "active"
       : "pending";
   } catch (error) {
-    // 404 or other error → not a member
-    return "none";
+    // Only treat 404 as "not a member"
+    const status =
+      typeof error === "object" &&
+      error !== null &&
+      "status" in error
+        ? (error as { status: unknown }).status
+        : undefined;
+
+    if (status === 404) {
+      return "none";
+    }
+
+    // Re-throw other errors (5xx, network, etc.)
+    // so the route can return a real 500 and log it
+    throw error;
   }
 }
 
@@ -69,6 +85,7 @@ export async function getOrgMembershipState(
  * @param orgName Organization name
  * @param username Username to check
  * @returns true if active member, false otherwise
+ * @throws Error if GitHub is unreachable
  */
 export async function isOrgMember(
   installationId: number,

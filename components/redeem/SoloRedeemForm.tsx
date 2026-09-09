@@ -3,7 +3,7 @@
 "use client";
 
 import { useState } from "react";
-import { buildRepoName } from "@/lib/github-repos";
+import { buildRepoName } from "@/lib/naming";
 
 interface Props {
   assessmentName: string;

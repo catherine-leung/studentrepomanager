@@ -1,5 +1,7 @@
 // lib/session.ts
 
+import "server-only";
+
 import { getToken } from "next-auth/jwt";
 import type { NextRequest } from "next/server";
 
@@ -27,13 +29,17 @@ export async function getAuthContext(
 ): Promise<AuthContext | null> {
   const token = await getToken({ req });
 
-  if (!token?.accessToken || !token.login) {
+  if (
+    !token?.accessToken ||
+    !token.login ||
+    !token.githubId
+  ) {
     return null;
   }
 
   return {
     login: token.login as string,
-    githubId: (token.githubId as number) ?? 0,
+    githubId: token.githubId as number,
     accessToken: token.accessToken as string,
   };
 }

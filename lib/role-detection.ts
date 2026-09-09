@@ -1,5 +1,7 @@
 // lib/role-detection.ts
 
+import "server-only";
+
 import type { AuthContext } from "./session";
 import { getOrganizationByName } from "./db";
 import {
@@ -13,6 +15,8 @@ export type UserRole = "owner" | "member" | "none";
  * Resolve a user's role in an org using the installation token.
  * This is immune to OAuth App restrictions and third-party
  * access policies.
+ *
+ * @throws Error if GitHub is unreachable (non-404)
  */
 export async function getUserRole(
   authContext: AuthContext | null,
@@ -40,7 +44,9 @@ export async function getUserRole(
       `in ${orgName}:`,
       error
     );
-    return "none";
+    // Re-throw so the caller can return a 500 instead of
+    // silently treating the user as "none"
+    throw error;
   }
 }
 

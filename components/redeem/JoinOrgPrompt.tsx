@@ -3,19 +3,13 @@
 "use client";
 
 import { useState } from "react";
+import { getOrgInvitationUrl } from "@/lib/github-urls";
 
 interface Props {
   linkId: string;
   orgName: string;
   membership: "pending" | "none";
   onContinue: () => void;
-}
-
-function orgInvitationUrl(orgName: string): string {
-  return (
-    "https://github.com/orgs/" +
-    `${encodeURIComponent(orgName)}/invitation`
-  );
 }
 
 export function JoinOrgPrompt({
@@ -26,11 +20,9 @@ export function JoinOrgPrompt({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // A pending invitation already exists on GitHub; skip
-  // straight to the "accept it" step.
   const [invitationUrl, setInvitationUrl] = useState<
     string | null
-  >(membership === "pending" ? orgInvitationUrl(orgName) : null);
+  >(membership === "pending" ? getOrgInvitationUrl(orgName) : null);
   const [checking, setChecking] = useState(false);
 
   async function handleSendInvitation() {

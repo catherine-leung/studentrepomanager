@@ -3,6 +3,7 @@
 "use client";
 
 import { useState } from "react";
+import { getOrgSettingsUrl } from "@/lib/github-urls";
 
 type LinkType = "solo" | "group" | "coursedocs";
 type AccessLevel = "read" | "write" | "admin";
@@ -38,6 +39,7 @@ export function LinkCreationForm({
 
   const isCoursedocs = formData.linkType === "coursedocs";
   const isGroup = formData.linkType === "group";
+  const isAdmin = formData.accessLevel === "admin";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -102,6 +104,8 @@ export function LinkCreationForm({
       setLoading(false);
     }
   }
+
+  const settingsUrl = getOrgSettingsUrl(orgName);
 
   return (
     <form
@@ -203,6 +207,43 @@ export function LinkCreationForm({
           )}
         </div>
       </div>
+
+      {isAdmin && (
+        <div
+          className="mb-4 p-4 bg-red-50 border border-red-200
+                     rounded text-red-900"
+        >
+          <p className="font-bold text-sm mb-2">
+            ⚠️ Admin access warning
+          </p>
+          <p className="text-sm mb-2">
+            Students with admin access can delete or make
+            repositories public, depending on your
+            organization&rsquo;s settings.
+          </p>
+          <p className="text-sm">
+            Ensure your organization has disabled:
+          </p>
+          <ul className="text-sm list-disc list-inside mt-2 space-y-1">
+            <li>
+              Members can change repository visibility
+            </li>
+            <li>Members can delete repositories</li>
+            <li>Members can transfer repositories</li>
+          </ul>
+          <p className="text-sm mt-3">
+            <a
+              href={settingsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-red-700 hover:text-red-900
+                         underline"
+            >
+              Configure org settings →
+            </a>
+          </p>
+        </div>
+      )}
 
       {isCoursedocs && (
         <div

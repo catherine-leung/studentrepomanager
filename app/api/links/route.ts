@@ -7,6 +7,7 @@ import {
   getOrganizationByName,
   getRepoLinksByOrg,
 } from "@/lib/db";
+import { internalError } from "@/lib/api-errors";
 
 export async function GET(request: NextRequest) {
   try {
@@ -54,15 +55,10 @@ export async function GET(request: NextRequest) {
     const links = await getRepoLinksByOrg(org.id);
     return NextResponse.json(links);
   } catch (error) {
-    console.error("Error in GET /api/links:", error);
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch links",
-      },
-      { status: 500 }
+    return internalError(
+      "GET /api/links",
+      error,
+      "Failed to fetch links"
     );
   }
 }

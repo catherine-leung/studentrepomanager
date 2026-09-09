@@ -1,5 +1,7 @@
 // lib/github-app.ts
 
+import "server-only";
+
 import { App } from "@octokit/app";
 import { Octokit } from "@octokit/rest";
 import crypto from "crypto";
@@ -219,16 +221,6 @@ export async function getInstallationOctokitForOrg(
 }
 
 /**
- * The page where a user accepts a pending org invitation.
- */
-export function getOrgInvitationUrl(org: string): string {
-  return (
-    "https://github.com/orgs/" +
-    `${encodeURIComponent(org)}/invitation`
-  );
-}
-
-/**
  * Send an organization invitation to a user.
  *
  * The user will receive a GitHub notification and can
@@ -264,6 +256,9 @@ export async function sendOrgInvitation(
 
     // The invitation response contains no URL field. Org
     // invitations are always accepted at this fixed page.
+    const { getOrgInvitationUrl } = await import(
+      "./github-urls"
+    );
     return { invitationUrl: getOrgInvitationUrl(org) };
   } catch (error) {
     const status =
@@ -296,79 +291,7 @@ export async function sendOrgInvitation(
 }
 
 // ---------------------------------------------------------------------------
-// ORG BASE PERMISSIONS
-// ---------------------------------------------------------------------------
-
-export type BasePermission =
-  | "none"
-  | "read"
-  | "write"
-  | "admin"
-  | "unknown";
-
-function toBasePermission(value: unknown): BasePermission {
-  if (
-    value === "none" ||
-    value === "read" ||
-    value === "write" ||
-    value === "admin"
-  ) {
-    return value;
-  }
-
-  return "unknown";
-}
-
-/**
- * Read `default_repository_permission` for an org using an
- * arbitrary Octokit. GitHub only includes this field when the
- * caller is authorized to see full org details; otherwise it is
- * absent and we report "unknown".
- */
-export async function readOrgBasePermission(
-  octokit: Octokit,
-  org: string
-): Promise<BasePermission> {
-  const { data } = await octokit.request("GET /orgs/{org}", {
-    org,
-    headers: { "Cache-Control": "no-cache" },
-  });
-
-  const value = (
-    data as { default_repository_permission?: string | null }
-  ).default_repository_permission;
-
-  return toBasePermission(value);
-}
-
-/**
- * Fetch the org's base repository permission using the App's
- * installation token.
- *
- * Returns "unknown" if GitHub withholds the field. The caller
- * may fall back to the owner's OAuth token in that case.
- */
-export async function getOrgBasePermission(
-  installationId: number,
-  org: string
-): Promise<BasePermission> {
-  const octokit = await getInstallationOctokit(installationId);
-  return readOrgBasePermission(octokit, org);
-}
-
-/**
- * Deep link to the "Member privileges" settings page, where
- * the base permission dropdown lives.
- */
-export function getOrgSettingsUrl(org: string): string {
-  return (
-    "https://github.com/organizations/" +
-    `${encodeURIComponent(org)}/settings/member_privileges`
-  );
-}
-
-// ---------------------------------------------------------------------------
-// APP INSTALLATIONS & ROLE CHECKING (Bug 1 fix)
+// APP INSTALLATIONS & ROLE CHECKING
 // ---------------------------------------------------------------------------
 
 function isStatus(error: unknown, status: number): boolean {

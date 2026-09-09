@@ -7,9 +7,13 @@ import {
   getRepoLinkByIdWithOrg,
   updateRepoLinkStatus,
   deleteRepoLink,
+  getTeamsByLink,
   RepoLinkHasRedemptionsError,
   RepoLinkNotFoundError,
 } from "@/lib/db";
+import { internalError } from "@/lib/api-errors";
+
+export const maxDuration = 60;
 
 /**
  * Verify that the authenticated user owns the link's organization.
@@ -115,16 +119,10 @@ export async function PATCH(
       );
     }
 
-    console.error("Error updating link:", error);
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to update link",
-      },
-      { status: 500 }
+    return internalError(
+      "PATCH /api/links/[linkId]",
+      error,
+      "Failed to update link"
     );
   }
 }
@@ -157,7 +155,31 @@ export async function DELETE(
       );
     }
 
+    // For coursedocs links, capture the team before
+    // deletion (the team row will be cascade-deleted)
+    let coursedocsTeam = null;
+
+    if (link.link_type === "coursedocs") {
+      const teams = await getTeamsByLink(link.id);
+      coursedocsTeam = teams[0] ?? null;
+    }
+
+    // Delete the link (and cascade-delete the team row)
     await deleteRepoLink(linkId);
+
+    // Clean up GitHub resources after DB deletion
+    if (coursedocsTeam) {
+      const { cleanupCoursedocsResources } = await import(
+        "@/lib/coursedocs"
+      );
+
+      await cleanupCoursedocsResources(
+        link.installation_id,
+        link.org_name,
+        link.link_id,
+        coursedocsTeam
+      );
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -179,16 +201,10 @@ export async function DELETE(
       );
     }
 
-    console.error("Error deleting link:", error);
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to delete link",
-      },
-      { status: 500 }
+    return internalError(
+      "DELETE /api/links/[linkId]",
+      error,
+      "Failed to delete link"
     );
   }
 }

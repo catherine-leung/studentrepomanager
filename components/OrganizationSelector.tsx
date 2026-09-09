@@ -1,3 +1,5 @@
+// components/OrganizationSelector.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
@@ -14,8 +16,16 @@ interface Props {
   selectedOrg: string | null;
 }
 
-// ✅ UPDATE THIS with your actual app name
-const GITHUB_APP_NAME = "student-repo-manager";
+/**
+ * Get the GitHub App slug from environment or fallback.
+ * In production, set NEXT_PUBLIC_GITHUB_APP_SLUG.
+ */
+function getAppSlug(): string {
+  return (
+    process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ||
+    "student-repo-manager"
+  );
+}
 
 export function OrganizationSelector({
   onSelect,
@@ -34,7 +44,6 @@ export function OrganizationSelector({
       }
 
       try {
-
         const response = await fetch("/api/orgs/installed");
 
         if (!response.ok) {
@@ -49,7 +58,6 @@ export function OrganizationSelector({
         setOrgs(data);
         setError(null);
       } catch (err) {
-
         setError(
           err instanceof Error
             ? err.message
@@ -63,6 +71,8 @@ export function OrganizationSelector({
 
     fetchOrgs();
   }, [session?.user?.login]);
+
+  const appSlug = getAppSlug();
 
   if (loading) {
     return (
@@ -83,7 +93,7 @@ export function OrganizationSelector({
         </p>
         <p className="text-sm mt-2">
           <a
-            href={`https://github.com/apps/${GITHUB_APP_NAME}/installations`}
+            href={`https://github.com/apps/${appSlug}/installations`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-600 hover:underline"
@@ -107,7 +117,7 @@ export function OrganizationSelector({
         </p>
         <p className="text-sm mt-2">
           <a
-            href={`https://github.com/apps/${GITHUB_APP_NAME}/installations/new`}
+            href={`https://github.com/apps/${appSlug}/installations/new`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-blue-600 hover:underline"

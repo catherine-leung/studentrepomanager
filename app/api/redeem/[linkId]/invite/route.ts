@@ -8,6 +8,7 @@ import {
 import {
   sendOrgInvitation,
 } from "@/lib/github-app";
+import { internalError } from "@/lib/api-errors";
 
 /**
  * POST /api/redeem/[linkId]/invite
@@ -49,7 +50,22 @@ export async function POST(
       );
     }
 
-    // 3. Send invitation
+    // 3. SECURITY: Check link is active and not expired
+    const isExpired =
+      link.expires_at !== null &&
+      new Date(link.expires_at) < new Date();
+
+    if (!link.is_active || isExpired) {
+      return NextResponse.json(
+        {
+          error:
+            "This assignment link is no longer available",
+        },
+        { status: 403 }
+      );
+    }
+
+    // 4. Send invitation
     try {
       const { invitationUrl } =
         await sendOrgInvitation(
@@ -80,19 +96,10 @@ export async function POST(
       throw error;
     }
   } catch (error) {
-    console.error(
-      "Error in POST /api/redeem/[linkId]/invite:",
-      error
-    );
-
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to send invitation",
-      },
-      { status: 500 }
+    return internalError(
+      "POST /api/redeem/[linkId]/invite",
+      error,
+      "Failed to send invitation"
     );
   }
 }
