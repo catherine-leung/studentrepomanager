@@ -262,7 +262,7 @@ export async function createGitHubTeam(
       {
         org,
         name: teamName,
-        privacy: "closed",
+        privacy: "secret",
       }
     );
 
