@@ -3,6 +3,7 @@
 "use client";
 
 import { useState } from "react";
+import { COPY } from "@/lib/copy";
 import { getOrgSettingsUrl } from "@/lib/github-urls";
 
 type LinkType = "solo" | "group" | "coursedocs";
@@ -28,19 +29,6 @@ const INPUT_CLASS =
   "focus:outline-none focus:ring-2 focus:ring-blue-500 " +
   "disabled:bg-gray-100 disabled:text-gray-500";
 
-const TEMPLATE_HELP: Record<LinkType, string> = {
-  solo:
-    "Each student's repository is generated from this " +
-    "template. Leave blank for an empty repository.",
-  group:
-    "Each team's repository is generated from this " +
-    "template. Leave blank for an empty repository.",
-  coursedocs:
-    "The shared repository is generated from this " +
-    "template when the link is created. Leave blank " +
-    "for an empty repository.",
-};
-
 export function LinkCreationForm({
   orgName,
   onSuccess,
@@ -62,7 +50,7 @@ export function LinkCreationForm({
     setSuccess(false);
 
     if (!formData.assessmentName.trim()) {
-      setError("Assessment name is required");
+      setError(COPY.linkForm.fields.nameHelp);
       setLoading(false);
       return;
     }
@@ -99,7 +87,9 @@ export function LinkCreationForm({
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Failed to create link");
+        throw new Error(
+          data.error || COPY.errors.failedToCreate
+        );
       }
 
       setSuccess(true);
@@ -110,7 +100,9 @@ export function LinkCreationForm({
       }, 1500);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Unknown error"
+        err instanceof Error
+          ? err.message
+          : COPY.errors.serverError
       );
     } finally {
       setLoading(false);
@@ -119,13 +111,37 @@ export function LinkCreationForm({
 
   const settingsUrl = getOrgSettingsUrl(orgName);
 
+  // Get template help text based on link type
+  const getTemplateHelp = (): string => {
+    const helpMap: Record<LinkType, string> =
+      COPY.linkForm.fields.templateHelp as Record<
+        LinkType,
+        string
+      >;
+    return helpMap[formData.linkType] || "";
+  };
+
+  // Get repository type label
+  const getRepositoryTypeLabel = (type: LinkType): string => {
+    const typeMap: Record<LinkType, string> =
+      COPY.linkForm.repositoryTypes as Record<LinkType, string>;
+    return typeMap[type] || type;
+  };
+
+  // Get access level label
+  const getAccessLevelLabel = (level: AccessLevel): string => {
+    const levelMap: Record<AccessLevel, string> =
+      COPY.linkForm.accessLevels as Record<AccessLevel, string>;
+    return levelMap[level] || level;
+  };
+
   return (
     <form
       onSubmit={handleSubmit}
       className="bg-white rounded-lg shadow p-6 mb-6"
     >
-      <h2 className="text-xl font-bold mb-4">
-        Create Assignment Link
+      <h2 className="text-xl font-bold mb-6">
+        {COPY.linkForm.title}
       </h2>
 
       {error && (
@@ -142,60 +158,103 @@ export function LinkCreationForm({
           className="mb-4 p-4 bg-green-50 border
                      border-green-200 rounded text-green-700"
         >
-          Link created successfully!
+          {COPY.linkForm.success}
         </div>
       )}
 
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">
-          Assessment Name *
-        </label>
-        <input
-          type="text"
-          placeholder="e.g., Lab 1: Sorting Algorithms"
-          value={formData.assessmentName}
-          onChange={(e) =>
-            setFormData({
-              ...formData,
-              assessmentName: e.target.value,
-            })
-          }
-          className={INPUT_CLASS}
-          required
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          {isCoursedocs
-            ? "Also used as the shared repository and team name"
-            : "Used to identify the assignment"}
-        </p>
-      </div>
+      {/* Repository Details Section */}
+      <div className="mb-6 pb-6 border-b border-gray-200">
+        <h3 className="text-sm font-bold text-gray-700 mb-4
+                       flex items-center gap-2">
+          {COPY.linkForm.sections.details}
+        </h3>
 
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div>
+        <div className="mb-4">
           <label className="block text-sm font-medium mb-2">
-            Assignment Type
+            {COPY.linkForm.fields.name}
+            <span className="text-red-600 ml-1">*</span>
           </label>
-          <select
-            value={formData.linkType}
+          <input
+            type="text"
+            placeholder="e.g., Lab 1: Sorting Algorithms"
+            value={formData.assessmentName}
             onChange={(e) =>
               setFormData({
                 ...formData,
-                linkType: e.target.value as LinkType,
+                assessmentName: e.target.value,
               })
             }
             className={INPUT_CLASS}
-          >
-            <option value="solo">Individual</option>
-            <option value="group">Group</option>
-            <option value="coursedocs">
-              Course Documents (shared, read-only)
-            </option>
-          </select>
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            {COPY.linkForm.fields.nameHelp}
+          </p>
         </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              {COPY.linkForm.fields.type}
+            </label>
+            <select
+              value={formData.linkType}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  linkType: e.target.value as LinkType,
+                })
+              }
+              className={INPUT_CLASS}
+            >
+              <option value="solo">
+                {getRepositoryTypeLabel("solo")}
+              </option>
+              <option value="group">
+                {getRepositoryTypeLabel("group")}
+              </option>
+              <option value="coursedocs">
+                {getRepositoryTypeLabel("coursedocs")}
+              </option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              {COPY.linkForm.fields.typeHelp}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-2">
+              {COPY.linkForm.fields.template}
+            </label>
+            <input
+              type="text"
+              placeholder="https://github.com/org/template-repo"
+              value={formData.templateRepoUrl}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  templateRepoUrl: e.target.value,
+                })
+              }
+              className={INPUT_CLASS}
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              {getTemplateHelp()}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Access & Security Section */}
+      <div className="mb-6 pb-6 border-b border-gray-200">
+        <h3 className="text-sm font-bold text-gray-700 mb-4
+                       flex items-center gap-2">
+          {COPY.linkForm.sections.access}
+        </h3>
 
         <div>
           <label className="block text-sm font-medium mb-2">
-            Access Level
+            {COPY.linkForm.fields.accessLevel}
           </label>
           <select
             value={isCoursedocs ? "read" : formData.accessLevel}
@@ -208,149 +267,142 @@ export function LinkCreationForm({
             }
             className={INPUT_CLASS}
           >
-            <option value="read">Read</option>
-            <option value="write">Write</option>
-            <option value="admin">Admin</option>
+            <option value="read">
+              {getAccessLevelLabel("read")}
+            </option>
+            <option value="write">
+              {getAccessLevelLabel("write")}
+            </option>
+            <option value="admin">
+              {getAccessLevelLabel("admin")}
+            </option>
           </select>
+          <p className="text-xs text-gray-500 mt-1">
+            {COPY.linkForm.fields.accessLevelHelp}
+          </p>
+
           {isCoursedocs && (
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 mt-2">
               Course documents are always read-only
             </p>
           )}
         </div>
-      </div>
 
-      {isAdmin && !isCoursedocs && (
-        <div
-          className="mb-4 p-4 bg-red-50 border border-red-200
-                     rounded text-red-900"
-        >
-          <p className="font-bold text-sm mb-2">
-            ⚠️ Admin access warning
-          </p>
-          <p className="text-sm mb-2">
-            Students with admin access can delete or make
-            repositories public, depending on your
-            organization&rsquo;s settings.
-          </p>
-          <p className="text-sm">
-            Ensure your organization has disabled:
-          </p>
-          <ul className="text-sm list-disc list-inside mt-2 space-y-1">
-            <li>
-              Members can change repository visibility
-            </li>
-            <li>Members can delete repositories</li>
-            <li>Members can transfer repositories</li>
-          </ul>
-          <p className="text-sm mt-3">
+        {isAdmin && !isCoursedocs && (
+          <div
+            className="mt-4 p-4 bg-red-50 border border-red-200
+                       rounded text-red-900"
+          >
+            <p className="font-bold text-sm mb-2">
+              {COPY.linkForm.adminWarning.title}
+            </p>
+            <p className="text-sm mb-2">
+              {COPY.linkForm.adminWarning.message}
+            </p>
+            <p className="text-sm mb-2">
+              Ensure your organization has disabled:
+            </p>
+            <ul className="text-sm list-disc list-inside
+                           space-y-1 mb-3">
+              {COPY.linkForm.adminWarning.settings.map(
+                (setting, i) => (
+                  <li key={i}>{setting}</li>
+                )
+              )}
+            </ul>
             <a
               href={settingsUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-red-700 hover:text-red-900
-                         underline"
+                         underline text-sm"
             >
-              Configure org settings →
+              {COPY.linkForm.adminWarning.configLink}
             </a>
-          </p>
-        </div>
-      )}
-
-      {isCoursedocs && (
-        <div
-          className="mb-4 p-4 bg-blue-50 border border-blue-200
-                     rounded text-sm text-blue-900"
-        >
-          A private repository and a team will be created{" "}
-          <strong>now</strong>
-          {hasTemplate
-            ? ", with the repository generated from the " +
-              "template below"
-            : ""}
-          . Every student who redeems the link joins that
-          team and gets read access to the same repository.
-        </div>
-      )}
-
-      <div className="mb-4">
-        <label className="block text-sm font-medium mb-2">
-          Template Repository URL (optional)
-        </label>
-        <input
-          type="text"
-          placeholder="https://github.com/org/template-repo"
-          value={formData.templateRepoUrl}
-          onChange={(e) =>
-            setFormData({
-              ...formData,
-              templateRepoUrl: e.target.value,
-            })
-          }
-          className={INPUT_CLASS}
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          {TEMPLATE_HELP[formData.linkType]}
-        </p>
+          </div>
+        )}
       </div>
 
-      {isGroup && (
-        <>
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Max Team Size
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="2-10"
-              value={formData.maxTeamSize}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === "" || /^\d+$/.test(val)) {
-                  setFormData({
-                    ...formData,
-                    maxTeamSize: val,
-                  });
-                }
-              }}
-              className={INPUT_CLASS}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              2–10 students per team
-            </p>
-          </div>
-
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
-              Max Number of Groups
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              placeholder="e.g., 10"
-              value={formData.maxGroups}
-              onChange={(e) => {
-                const val = e.target.value;
-                if (val === "" || /^\d+$/.test(val)) {
-                  setFormData({
-                    ...formData,
-                    maxGroups: val,
-                  });
-                }
-              }}
-              className={INPUT_CLASS}
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Maximum number of teams students can create
-            </p>
-          </div>
-        </>
+      {/* Coursedocs Info */}
+      {isCoursedocs && (
+        <div
+          className="mb-6 p-4 bg-blue-50 border border-blue-200
+                     rounded text-sm text-blue-900"
+        >
+          {COPY.linkForm.coursedocsInfo}
+        </div>
       )}
 
+      {/* Group-specific options */}
+      {isGroup && (
+        <div className="mb-6 pb-6 border-b border-gray-200">
+          <h3 className="text-sm font-bold text-gray-700 mb-4">
+            Team Configuration
+          </h3>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                {COPY.linkForm.fields.maxTeamSize}
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="2-10"
+                value={formData.maxTeamSize}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "" || /^\d+$/.test(val)) {
+                    setFormData({
+                      ...formData,
+                      maxTeamSize: val,
+                    });
+                  }
+                }}
+                className={INPUT_CLASS}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {COPY.linkForm.fields.maxTeamSizeHelp}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                {COPY.linkForm.fields.maxGroups}
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="e.g., 10"
+                value={formData.maxGroups}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val === "" || /^\d+$/.test(val)) {
+                    setFormData({
+                      ...formData,
+                      maxGroups: val,
+                    });
+                  }
+                }}
+                className={INPUT_CLASS}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                {COPY.linkForm.fields.maxGroupsHelp}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expiration Section */}
       <div className="mb-6">
+        <h3 className="text-sm font-bold text-gray-700 mb-4
+                       flex items-center gap-2">
+          {COPY.linkForm.sections.expiration}
+        </h3>
+
         <label className="block text-sm font-medium mb-2">
-          Expires In (days) - Optional
+          {COPY.linkForm.fields.expiresIn}
         </label>
         <input
           type="text"
@@ -369,16 +421,17 @@ export function LinkCreationForm({
           className={INPUT_CLASS}
         />
         <p className="text-xs text-gray-500 mt-1">
-          1–365 days, or leave blank for no expiration
+          {COPY.linkForm.fields.expiresInHelp}
         </p>
       </div>
 
+      {/* Submit Button */}
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-blue-600 text-white px-4 py-2
+        className="w-full bg-blue-600 text-white px-4 py-3
                    rounded-lg hover:bg-blue-700 transition
-                   disabled:bg-gray-400"
+                   disabled:bg-gray-400 font-medium"
       >
         {loading
           ? isCoursedocs
@@ -386,7 +439,7 @@ export function LinkCreationForm({
               ? "Creating team and repository from template..."
               : "Creating team and repository..."
             : "Creating..."
-          : "Create Link"}
+          : COPY.linkForm.submitButton}
       </button>
     </form>
   );

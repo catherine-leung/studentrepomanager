@@ -3,6 +3,7 @@
 "use client";
 
 import { useState } from "react";
+import { COPY } from "@/lib/copy";
 
 interface Props {
   repoName: string;
@@ -24,17 +25,39 @@ export function RedeemSuccess({
   const isCoursedocs = linkType === "coursedocs";
 
   function copyToClipboard() {
-    navigator.clipboard.writeText(cloneUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard
+      .writeText(cloneUrl)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+      });
   }
+
+  const successTitle = alreadyRedeemed
+    ? COPY.redeem.success.alreadyRedeemed
+    : isCoursedocs
+      ? COPY.redeem.success.coursedocsTitle
+      : COPY.redeem.success.title;
+
+  const successMessage = alreadyRedeemed
+    ? COPY.redeem.success.alreadyRedeemedMessage
+    : isCoursedocs
+      ? COPY.redeem.success.coursedocsMessage
+      : COPY.redeem.success.message;
+
+  const nextStepsItems = isCoursedocs
+    ? COPY.redeem.success.nextStepsCoursedocs
+    : COPY.redeem.success.nextStepsItems;
 
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <h1 className="text-2xl font-bold">
-            Student Repo Manager
+            {COPY.appName}
           </h1>
         </div>
       </nav>
@@ -59,26 +82,16 @@ export function RedeemSuccess({
           </div>
 
           <h2 className="text-2xl font-bold text-center mb-2">
-            {alreadyRedeemed
-              ? "Repository Access Confirmed"
-              : isCoursedocs
-                ? "Access Granted!"
-                : "Repository Created!"}
+            {successTitle}
           </h2>
 
           <p className="text-center text-gray-600 mb-6">
-            {alreadyRedeemed
-              ? "You already have access to this repository."
-              : isCoursedocs
-                ? "You have been added to the course team with " +
-                  "read access to the shared repository."
-                : "Your repository has been created and you have " +
-                  "been added as a collaborator."}
+            {successMessage}
           </p>
 
           <div className="bg-gray-50 rounded-lg p-4 mb-6">
             <p className="text-sm text-gray-600 mb-2">
-              Repository Name
+              {COPY.redeem.success.repoName}
             </p>
             <p className="font-mono font-bold text-lg">
               {repoName}
@@ -87,7 +100,7 @@ export function RedeemSuccess({
 
           <div className="mb-6">
             <p className="text-sm text-gray-600 mb-2">
-              Clone Command
+              {COPY.redeem.success.cloneCommand}
             </p>
             <div className="flex gap-2">
               <input
@@ -104,7 +117,7 @@ export function RedeemSuccess({
                            hover:bg-gray-300 rounded-lg
                            transition font-medium text-sm"
               >
-                {copied ? "Copied!" : "Copy"}
+                {copied ? COPY.linkCard.copied : COPY.linkCard.copyUrl}
               </button>
             </div>
           </div>
@@ -122,20 +135,14 @@ export function RedeemSuccess({
 
           <div className="p-4 bg-blue-50 border border-blue-200
                           rounded">
-            <p className="text-sm text-blue-900">
-              <span className="font-bold">Next steps:</span>
+            <p className="text-sm text-blue-900 font-bold mb-2">
+              {COPY.redeem.success.nextSteps}
             </p>
             <ol className="text-sm text-blue-900 list-decimal
-                           list-inside mt-2 space-y-1">
-              <li>Clone the repository using the command above</li>
-              {isCoursedocs ? (
-                <li>Run <code>git pull</code> regularly for updates</li>
-              ) : (
-                <>
-                  <li>Complete the assignment</li>
-                  <li>Push your changes to GitHub</li>
-                </>
-              )}
+                           list-inside space-y-1">
+              {nextStepsItems.map((item, i) => (
+                <li key={i}>{item}</li>
+              ))}
             </ol>
           </div>
         </div>

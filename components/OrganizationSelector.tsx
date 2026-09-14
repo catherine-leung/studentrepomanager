@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { COPY } from "@/lib/copy";
 
 interface Organization {
   login: string;
@@ -16,10 +17,6 @@ interface Props {
   selectedOrg: string | null;
 }
 
-/**
- * Get the GitHub App slug from environment or fallback.
- * In production, set NEXT_PUBLIC_GITHUB_APP_SLUG.
- */
 function getAppSlug(): string {
   return (
     process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ||
@@ -49,7 +46,7 @@ export function OrganizationSelector({
         if (!response.ok) {
           const data = await response.json();
           throw new Error(
-            data.error || "Failed to fetch organizations"
+            data.error || COPY.errors.failedToFetch
           );
         }
 
@@ -61,7 +58,7 @@ export function OrganizationSelector({
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to load organizations"
+            : COPY.errors.serverError
         );
         setOrgs([]);
       } finally {
@@ -84,11 +81,13 @@ export function OrganizationSelector({
 
   if (error) {
     return (
-      <div className="text-red-600 p-4 bg-red-50 rounded">
-        <p className="font-bold">Error loading organizations:</p>
+      <div className="text-red-600 p-4 bg-red-50 rounded mb-6">
+        <p className="font-bold">
+          Error loading organizations:
+        </p>
         <p>{error}</p>
         <p className="text-sm mt-2">
-          Make sure the GitHub App is installed in at least 
+          Make sure the GitHub App is installed in at least
           one organization.
         </p>
         <p className="text-sm mt-2">
@@ -107,12 +106,12 @@ export function OrganizationSelector({
 
   if (orgs.length === 0) {
     return (
-      <div className="text-gray-600 p-4 bg-yellow-50 rounded">
+      <div className="text-gray-600 p-4 bg-yellow-50 rounded mb-6">
         <p className="font-bold">
           No organizations with app installed
         </p>
         <p>
-          Install the GitHub App in your organizations 
+          Install the GitHub App in your organizations
           to get started.
         </p>
         <p className="text-sm mt-2">

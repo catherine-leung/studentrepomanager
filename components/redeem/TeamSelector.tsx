@@ -3,6 +3,7 @@
 "use client";
 
 import { useState } from "react";
+import { COPY } from "@/lib/copy";
 
 interface Team {
   id: number;
@@ -14,11 +15,6 @@ interface Team {
 interface Props {
   teams: Team[];
   maxTeamSize: number | null;
-  /**
-   * Whether the professor's max_groups limit still allows a
-   * new team to be created. When false, the create form is
-   * replaced with an explanatory message.
-   */
   canCreateTeam: boolean;
   onSelectTeam: (teamId: number) => Promise<void>;
   onCreateTeam: (
@@ -74,15 +70,14 @@ export function TeamSelector({
       {/* Join Existing Team */}
       <div className="bg-white rounded-lg shadow p-6">
         <h3 className="text-xl font-bold mb-4">
-          Join a Team
+          {COPY.redeem.group.joinTeam}
         </h3>
 
         {availableTeams.length === 0 ? (
           <p className="text-gray-600 mb-4">
             {canCreateTeam
-              ? "No teams available to join."
-              : "No teams have open spots. Please contact " +
-                "your instructor."}
+              ? COPY.redeem.group.noTeamsAvailable
+              : COPY.redeem.group.noTeamsMax}
           </p>
         ) : (
           <>
@@ -113,7 +108,7 @@ export function TeamSelector({
                     <p className="text-xs text-gray-500">
                       {team.memberCount ?? 0} /{" "}
                       {team.expected_team_size ?? "?"}{" "}
-                      members
+                      {COPY.redeem.group.members}
                     </p>
                   </div>
                 </label>
@@ -122,15 +117,15 @@ export function TeamSelector({
 
             <button
               onClick={handleSelectTeam}
-              disabled={
-                loading || selectedTeamId === null
-              }
+              disabled={loading || selectedTeamId === null}
               className="w-full bg-blue-600 text-white px-6
                          py-3 rounded-lg hover:bg-blue-700
                          transition font-medium
                          disabled:bg-gray-400"
             >
-              {loading ? "Joining..." : "Join Team"}
+              {loading
+                ? COPY.redeem.group.joining
+                : COPY.redeem.group.joinButton}
             </button>
           </>
         )}
@@ -140,17 +135,17 @@ export function TeamSelector({
       {canCreateTeam ? (
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-xl font-bold mb-4">
-            Create a New Team
+            {COPY.redeem.group.createTeam}
           </h3>
 
           <form onSubmit={handleCreateTeam}>
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2">
-                Team Name
+                {COPY.redeem.group.teamNameLabel}
               </label>
               <input
                 type="text"
-                placeholder="e.g., Team A, Group 1"
+                placeholder={COPY.redeem.group.teamNamePlaceholder}
                 value={newTeamName}
                 onChange={(e) =>
                   setNewTeamName(e.target.value)
@@ -165,7 +160,7 @@ export function TeamSelector({
 
             <div className="mb-6">
               <label className="block text-sm font-medium mb-2">
-                Expected Team Size
+                {COPY.redeem.group.expectedSizeLabel}
               </label>
               <input
                 type="number"
@@ -181,8 +176,9 @@ export function TeamSelector({
                            focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-xs text-gray-500 mt-2">
-                Maximum allowed by instructor:{" "}
+                {COPY.redeem.group.maxAllowed}
                 <span className="font-bold">
+                  {" "}
                   {maxTeamSize || "Unlimited"}
                 </span>
               </p>
@@ -201,8 +197,8 @@ export function TeamSelector({
                          disabled:bg-gray-400"
             >
               {loading
-                ? "Creating team..."
-                : "Create Team"}
+                ? COPY.redeem.group.creating
+                : COPY.redeem.group.createButton}
             </button>
           </form>
         </div>
@@ -212,7 +208,7 @@ export function TeamSelector({
                      text-gray-600"
         >
           <h3 className="text-xl font-bold mb-2 text-gray-800">
-            Create a New Team
+            {COPY.redeem.group.createTeam}
           </h3>
           <p>
             The maximum number of teams for this assignment

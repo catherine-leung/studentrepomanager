@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { RepoCreationLink } from "@/lib/types";
 import { LinkDetails } from "./LinkDetails";
+import { COPY } from "@/lib/copy";
 
 interface Props {
   link: RepoCreationLink;
@@ -28,12 +29,19 @@ export function LinkCard({
 
   const isAdmin = link.access_level === "admin";
   const isActive = link.is_active;
+  const isCoursedocs = link.link_type === "coursedocs";
 
   const typeLabel = {
-    solo: "Individual",
-    group: "Group",
-    coursedocs: "Course Documents",
+    solo: COPY.linkForm.repositoryTypes.solo,
+    group: COPY.linkForm.repositoryTypes.group,
+    coursedocs: COPY.linkForm.repositoryTypes.coursedocs,
   }[link.link_type];
+
+  const accessLevelLabel = {
+    read: COPY.linkForm.accessLevels.read,
+    write: COPY.linkForm.accessLevels.write,
+    admin: COPY.linkForm.accessLevels.admin,
+  }[link.access_level];
 
   const borderColor = isActive ? "#3b82f6" : "#d1d5db";
 
@@ -56,7 +64,7 @@ export function LinkCard({
       if (!response.ok) {
         const data = await response.json();
         throw new Error(
-          data.error || "Failed to update link"
+          data.error || COPY.errors.failedToUpdate
         );
       }
 
@@ -65,7 +73,7 @@ export function LinkCard({
       setError(
         err instanceof Error
           ? err.message
-          : "Unknown error"
+          : COPY.errors.serverError
       );
     } finally {
       setLoading(false);
@@ -73,16 +81,11 @@ export function LinkCard({
   }
 
   async function handleDelete() {
-    const isCoursedocs = link.link_type === "coursedocs";
+    let message = COPY.linkCard.deleteConfirm;
 
-    const message =
-      "Delete this link permanently? Links with " +
-      "redemptions cannot be deleted and must be " +
-      "deactivated instead." +
-      (isCoursedocs
-        ? "\n\nThe shared repository will be archived " +
-          "and renamed to free the name."
-        : "");
+    if (isCoursedocs) {
+      message += "\n\n" + COPY.linkCard.deleteConfirmCoursedocs;
+    }
 
     const confirmed = confirm(message);
 
@@ -105,7 +108,7 @@ export function LinkCard({
         const data = await response.json();
 
         throw new Error(
-          data.error || "Failed to delete link"
+          data.error || COPY.errors.failedToDelete
         );
       }
 
@@ -114,7 +117,7 @@ export function LinkCard({
       setError(
         err instanceof Error
           ? err.message
-          : "Unknown error"
+          : COPY.errors.serverError
       );
     } finally {
       setLoading(false);
@@ -123,17 +126,19 @@ export function LinkCard({
 
   function copyToClipboard() {
     if (typeof window === "undefined") return;
-    
-    const url = `${window.location.origin}/redeem/${link.link_id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch((err) => {
-      console.error("Failed to copy:", err);
-      setError("Failed to copy URL to clipboard");
-    });
-  }
 
+    const url = `${window.location.origin}/redeem/${link.link_id}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+        setError(COPY.errors.failedToFetch);
+      });
+  }
 
   return (
     <div
@@ -157,7 +162,7 @@ export function LinkCard({
                 className="px-2 py-1 text-xs font-medium
                            rounded-full bg-red-100 text-red-800"
               >
-                Admin Access
+                {COPY.linkForm.accessLevels.admin} Access
               </span>
             )}
             {isExpired && (
@@ -165,7 +170,7 @@ export function LinkCard({
                 className="px-2 py-1 text-xs font-medium
                            rounded-full bg-gray-100 text-gray-800"
               >
-                Expired
+                {COPY.linkCard.expires}
               </span>
             )}
           </div>
@@ -184,7 +189,9 @@ export function LinkCard({
                        transition disabled:bg-gray-100
                        disabled:text-gray-400"
           >
-            {isActive ? "Deactivate" : "Activate"}
+            {isActive
+              ? COPY.linkCard.deactivate
+              : COPY.linkCard.activate}
           </button>
           <button
             onClick={handleDelete}
@@ -194,7 +201,7 @@ export function LinkCard({
                        transition disabled:bg-gray-100
                        disabled:text-gray-400"
           >
-            Delete
+            {COPY.linkCard.delete}
           </button>
         </div>
       </div>
@@ -210,7 +217,7 @@ export function LinkCard({
 
       <div className="mb-4 p-3 bg-gray-50 rounded">
         <p className="text-xs text-gray-600 mb-2">
-          Redemption URL
+          {COPY.linkCard.shareText}
         </p>
         <div className="flex gap-2">
           <input
@@ -231,41 +238,40 @@ export function LinkCard({
                        text-sm rounded hover:bg-blue-700
                        transition font-medium whitespace-nowrap"
           >
-            {copied ? "Copied!" : "Copy"}
+            {copied ? COPY.linkCard.copied : COPY.linkCard.copyUrl}
           </button>
         </div>
-        <p className="text-xs text-gray-500 mt-2">
-          Share this link with students
-        </p>
       </div>
 
       <div className="grid grid-cols-4 gap-3 mb-4 text-sm">
         <div>
-          <p className="text-gray-600">Type</p>
+          <p className="text-gray-600">{COPY.linkCard.type}</p>
           <p className="font-medium capitalize">
             {link.link_type}
           </p>
         </div>
         <div>
-          <p className="text-gray-600">Access Level</p>
+          <p className="text-gray-600">
+            {COPY.linkCard.accessLevel}
+          </p>
           <p className="font-medium capitalize">
-            {link.access_level}
+            {accessLevelLabel}
           </p>
         </div>
         <div>
-          <p className="text-gray-600">Created</p>
+          <p className="text-gray-600">{COPY.linkCard.created}</p>
           <p className="font-medium">
             {new Date(link.created_at).toLocaleDateString()}
           </p>
         </div>
         <div>
-          <p className="text-gray-600">Status</p>
+          <p className="text-gray-600">{COPY.linkCard.status}</p>
           <p
             className={`font-medium ${
               isActive ? "text-green-600" : "text-gray-600"
             }`}
           >
-            {isActive ? "Active" : "Inactive"}
+            {isActive ? COPY.linkCard.active : COPY.linkCard.inactive}
           </p>
         </div>
       </div>
@@ -274,7 +280,9 @@ export function LinkCard({
         <div className="mb-4 p-3 bg-yellow-50 border
                         border-yellow-200 rounded text-sm">
           <p className="text-yellow-900">
-            <span className="font-bold">Expires:</span>{" "}
+            <span className="font-bold">
+              {COPY.linkCard.expires}:
+            </span>{" "}
             {new Date(link.expires_at).toLocaleDateString()}
           </p>
         </div>
@@ -284,13 +292,18 @@ export function LinkCard({
         <div className="mb-4 p-3 bg-blue-50 border
                         border-blue-200 rounded text-sm">
           <p className="text-blue-900">
-            <span className="font-bold">Max team size:</span>{" "}
+            <span className="font-bold">
+              {COPY.linkCard.maxTeamSize}:
+            </span>{" "}
             {link.max_team_size || "Unlimited"}
           </p>
           <p className="text-blue-900">
-            <span className="font-bold">Max groups:</span>{" "}
+            <span className="font-bold">
+              {COPY.linkCard.maxGroups}:
+            </span>{" "}
             {link.max_groups || "Unlimited"} (
-            {Number(link.current_groups) || 0} created)
+            {Number(link.current_groups) || 0}{" "}
+            {COPY.linkCard.created_count})
           </p>
         </div>
       )}
@@ -299,9 +312,10 @@ export function LinkCard({
         <div className="mb-4 p-3 bg-purple-50 border
                         border-purple-200 rounded text-sm">
           <p className="text-purple-900">
-            <span className="font-bold">Shared access:</span>{" "}
-            All students join the same team and repository
-            with read-only access.
+            <span className="font-bold">
+              {COPY.linkCard.shareText}:
+            </span>{" "}
+            {COPY.linkCard.sharedAccess}
           </p>
         </div>
       )}
@@ -311,7 +325,9 @@ export function LinkCard({
         className="text-sm text-blue-600 hover:text-blue-700
                    font-medium"
       >
-        {expanded ? "Hide" : "Show"} Analytics
+        {expanded
+          ? COPY.linkCard.hideAnalytics
+          : COPY.linkCard.showAnalytics}
       </button>
 
       {expanded && <LinkDetails linkId={link.link_id} />}

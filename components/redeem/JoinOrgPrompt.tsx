@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { getOrgInvitationUrl } from "@/lib/github-urls";
+import { COPY } from "@/lib/copy";
 
 interface Props {
   linkId: string;
@@ -22,7 +23,9 @@ export function JoinOrgPrompt({
   const [error, setError] = useState<string | null>(null);
   const [invitationUrl, setInvitationUrl] = useState<
     string | null
-  >(membership === "pending" ? getOrgInvitationUrl(orgName) : null);
+  >(
+    membership === "pending" ? getOrgInvitationUrl(orgName) : null
+  );
   const [checking, setChecking] = useState(false);
 
   async function handleSendInvitation() {
@@ -38,7 +41,7 @@ export function JoinOrgPrompt({
       if (!response.ok) {
         const data = await response.json();
         throw new Error(
-          data.error || "Failed to send invitation"
+          data.error || COPY.errors.failedToFetch
         );
       }
 
@@ -48,7 +51,7 @@ export function JoinOrgPrompt({
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to send invitation"
+          : COPY.errors.serverError
       );
     } finally {
       setLoading(false);
@@ -66,7 +69,7 @@ export function JoinOrgPrompt({
       );
 
       if (!response.ok) {
-        throw new Error("Failed to check membership");
+        throw new Error(COPY.errors.failedToFetch);
       }
 
       const data = await response.json();
@@ -74,16 +77,13 @@ export function JoinOrgPrompt({
       if (data.membership === "active") {
         onContinue();
       } else {
-        setError(
-          "You are still not a member. " +
-          "Please accept the invitation on GitHub."
-        );
+        setError(COPY.redeem.joinOrg.notMember);
       }
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to check membership"
+          : COPY.errors.serverError
       );
     } finally {
       setChecking(false);
@@ -95,7 +95,7 @@ export function JoinOrgPrompt({
       <nav className="bg-white shadow">
         <div className="max-w-2xl mx-auto px-4 py-4">
           <h1 className="text-2xl font-bold">
-            Student Repo Manager
+            {COPY.appName}
           </h1>
         </div>
       </nav>
@@ -103,16 +103,17 @@ export function JoinOrgPrompt({
       <main className="max-w-2xl mx-auto px-4 py-8">
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-2xl font-bold mb-4">
-            Join Organization
+            {COPY.redeem.joinOrg.title}
           </h2>
 
           <p className="text-gray-600 mb-6">
-            You need to join the{" "}
+            {COPY.redeem.joinOrg.message}
             <span className="font-mono font-bold">
+              {" "}
               {orgName}
-            </span>{" "}
-            organization on GitHub before you can redeem
-            this assignment.
+            </span>
+            {" "}
+            on GitHub before you can redeem this assignment.
           </p>
 
           {error && (
@@ -138,20 +139,16 @@ export function JoinOrgPrompt({
                            disabled:bg-gray-400"
               >
                 {loading
-                  ? "Sending invitation..."
-                  : "Send Invitation"}
+                  ? COPY.redeem.joinOrg.sendingInvitation
+                  : COPY.redeem.joinOrg.sendInvitation}
               </button>
             </>
           ) : (
             <>
               <p className="text-gray-600 mb-4">
                 {membership === "pending"
-                  ? "You already have a pending invitation " +
-                    "to this organization. Click the link " +
-                    "below to accept it:"
-                  : "An invitation has been sent to your " +
-                    "GitHub account. Click the link below " +
-                    "to accept it:"}
+                  ? COPY.redeem.joinOrg.alreadyPending
+                  : "An invitation has been sent to your GitHub account. Click the link below to accept it:"}
               </p>
 
               <a
@@ -163,12 +160,11 @@ export function JoinOrgPrompt({
                            hover:bg-green-700 transition
                            font-medium text-center mb-6"
               >
-                Accept Invitation on GitHub →
+                {COPY.redeem.joinOrg.acceptInvitation}
               </a>
 
               <p className="text-gray-600 mb-6">
-                After accepting the invitation, click the
-                button below to continue.
+                {COPY.redeem.joinOrg.afterAccept}
               </p>
 
               <button
@@ -180,8 +176,8 @@ export function JoinOrgPrompt({
                            disabled:bg-gray-400"
               >
                 {checking
-                  ? "Checking membership..."
-                  : "Continue"}
+                  ? COPY.redeem.joinOrg.checking
+                  : COPY.redeem.joinOrg.continue}
               </button>
             </>
           )}
@@ -189,11 +185,8 @@ export function JoinOrgPrompt({
           <div className="mt-8 p-4 bg-blue-50 border
                           border-blue-200 rounded">
             <p className="text-sm text-blue-900">
-              <span className="font-bold">Note:</span> You
-              will only have access to repositories that
-              your instructor explicitly adds you to. The
-              organization will not give you any other
-              permissions.
+              <span className="font-bold">Note:</span>{" "}
+              {COPY.redeem.joinOrg.note}
             </p>
           </div>
         </div>

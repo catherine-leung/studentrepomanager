@@ -1,8 +1,11 @@
+// components/LinksList.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
 import { RepoCreationLink } from "@/lib/types";
 import { LinkCard } from "./LinkCard";
+import { COPY } from "@/lib/copy";
 
 interface Props {
   orgName: string;
@@ -28,14 +31,16 @@ export function LinksList({
         );
 
         if (!response.ok) {
-          throw new Error("Failed to fetch links");
+          throw new Error(COPY.errors.failedToFetch);
         }
 
         const data = await response.json();
         setLinks(data);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Unknown error"
+          err instanceof Error
+            ? err.message
+            : COPY.errors.serverError
         );
       } finally {
         setLoading(false);
@@ -48,7 +53,6 @@ export function LinksList({
   }, [orgName, refreshTrigger]);
 
   function handleDelete(linkId: string) {
-    // Use functional update to avoid stale closure
     setLinks((prev) =>
       prev.filter((l) => l.link_id !== linkId)
     );
@@ -58,7 +62,6 @@ export function LinksList({
     linkId: string,
     newStatus: boolean
   ) {
-    // Use functional update to avoid stale closure
     setLinks((prev) =>
       prev.map((l) =>
         l.link_id === linkId ? { ...l, is_active: newStatus } : l
@@ -67,7 +70,11 @@ export function LinksList({
   }
 
   if (loading) {
-    return <div className="text-gray-600">Loading links...</div>;
+    return (
+      <div className="text-gray-600">
+        Loading links...
+      </div>
+    );
   }
 
   if (error) {
@@ -77,14 +84,16 @@ export function LinksList({
   if (links.length === 0) {
     return (
       <div className="text-gray-600">
-        No assignment links created yet.
+        {COPY.dashboard.noLinks}
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold">Assignment Links</h2>
+      <h2 className="text-xl font-bold">
+        {COPY.dashboard.title}
+      </h2>
       {links.map((link) => (
         <LinkCard
           key={link.id}

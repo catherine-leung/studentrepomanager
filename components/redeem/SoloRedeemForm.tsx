@@ -4,6 +4,7 @@
 
 import { useState } from "react";
 import { buildRepoName } from "@/lib/naming";
+import { COPY } from "@/lib/copy";
 
 interface Props {
   assessmentName: string;
@@ -29,19 +30,21 @@ export function SoloRedeemForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-lg
-                                             shadow p-6">
+    <form
+      onSubmit={handleSubmit}
+      className="bg-white rounded-lg shadow p-6"
+    >
       <h3 className="text-xl font-bold mb-4">
-        Create Your Repository
+        {COPY.redeem.solo.title}
       </h3>
 
       <div className="mb-6">
         <label className="block text-sm font-medium mb-2">
-          Repository Name Suffix (optional)
+          {COPY.redeem.solo.slugLabel}
         </label>
         <input
           type="text"
-          placeholder="Leave blank to use your GitHub username"
+          placeholder={COPY.redeem.solo.slugPlaceholder}
           value={customSlug}
           onChange={(e) => setCustomSlug(e.target.value)}
           maxLength={100}
@@ -50,7 +53,7 @@ export function SoloRedeemForm({
                      focus:ring-2 focus:ring-blue-500"
         />
         <p className="text-xs text-gray-500 mt-2">
-          Your repository name will be:
+          {COPY.redeem.solo.slugHelp}
           <span className="font-mono font-bold">
             {" "}
             {previewRepoName}
@@ -65,7 +68,9 @@ export function SoloRedeemForm({
                    rounded-lg hover:bg-blue-700 transition
                    font-medium disabled:bg-gray-400"
       >
-        {loading ? "Creating repository..." : "Create Repository"}
+        {loading
+          ? COPY.redeem.solo.creating
+          : COPY.redeem.solo.createButton}
       </button>
     </form>
   );

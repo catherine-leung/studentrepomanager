@@ -2,6 +2,8 @@
 
 "use client";
 
+import { COPY } from "@/lib/copy";
+
 interface Props {
   repoName: string;
   onSubmit: () => Promise<void>;
@@ -16,12 +18,11 @@ export function CoursedocsRedeemForm({
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h3 className="text-xl font-bold mb-4">
-        Get Access to Course Documents
+        {COPY.redeem.coursedocs.title}
       </h3>
 
       <p className="text-gray-600 mb-6">
-        Click below to join the course team and gain access
-        to the shared repository.
+        {COPY.redeem.coursedocs.message}
       </p>
 
       <button
@@ -31,7 +32,9 @@ export function CoursedocsRedeemForm({
                    rounded-lg hover:bg-blue-700 transition
                    font-medium disabled:bg-gray-400"
       >
-        {loading ? "Granting access..." : "Get Access"}
+        {loading
+          ? COPY.redeem.coursedocs.granting
+          : COPY.redeem.coursedocs.getAccessButton}
       </button>
     </div>
   );

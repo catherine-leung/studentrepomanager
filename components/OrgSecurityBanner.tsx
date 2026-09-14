@@ -3,6 +3,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { COPY } from "@/lib/copy";
 
 interface Status {
   basePermission: string;
@@ -27,7 +28,7 @@ export function OrgSecurityBanner({ orgName }: Props) {
       `/api/orgs/${encodeURIComponent(orgName)}/security`
     )
       .then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch");
+        if (!r.ok) throw new Error(COPY.errors.failedToFetch);
         return r.json();
       })
       .then(setStatus)
@@ -52,7 +53,7 @@ export function OrgSecurityBanner({ orgName }: Props) {
       );
 
       if (!r.ok) {
-        throw new Error("Failed to apply settings");
+        throw new Error(COPY.errors.failedToUpdate);
       }
 
       setStatus(await r.json());
@@ -60,7 +61,7 @@ export function OrgSecurityBanner({ orgName }: Props) {
       setError(
         err instanceof Error
           ? err.message
-          : "Unknown error"
+          : COPY.errors.serverError
       );
     } finally {
       setBusy(false);
@@ -92,8 +93,9 @@ export function OrgSecurityBanner({ orgName }: Props) {
           </h3>
           <div className="mt-2 text-sm text-yellow-700">
             <p>
-              Base repository permission is set to{" "}
+              Base repository permission is set to
               <span className="font-mono font-bold">
+                {" "}
                 {status.basePermission}
               </span>
               . Students can currently see every repository
@@ -101,8 +103,11 @@ export function OrgSecurityBanner({ orgName }: Props) {
               students&rsquo; work.
             </p>
             <p className="mt-2">
-              It must be set to{" "}
-              <span className="font-mono font-bold">none</span>
+              It must be set to
+              <span className="font-mono font-bold">
+                {" "}
+                none
+              </span>
               .
             </p>
           </div>

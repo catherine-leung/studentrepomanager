@@ -1,6 +1,9 @@
+// components/LinkDetails.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
+import { COPY } from "@/lib/copy";
 
 interface LinkStats {
   totalRedemptions: number;
@@ -36,7 +39,7 @@ export function LinkDetails({ linkId }: Props) {
         );
 
         if (!response.ok) {
-          throw new Error("Failed to fetch details");
+          throw new Error(COPY.errors.failedToFetch);
         }
 
         const data = await response.json();
@@ -44,7 +47,9 @@ export function LinkDetails({ linkId }: Props) {
         setRedemptions(data.redemptions);
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Unknown error"
+          err instanceof Error
+            ? err.message
+            : COPY.errors.serverError
         );
       } finally {
         setLoading(false);
@@ -55,7 +60,9 @@ export function LinkDetails({ linkId }: Props) {
   }, [linkId]);
 
   if (loading) {
-    return <div className="mt-4 text-gray-600">Loading...</div>;
+    return (
+      <div className="mt-4 text-gray-600">Loading...</div>
+    );
   }
 
   if (error) {
@@ -68,19 +75,25 @@ export function LinkDetails({ linkId }: Props) {
     <div className="mt-4 pt-4 border-t border-gray-200">
       <div className="grid grid-cols-3 gap-4 mb-6">
         <div className="bg-blue-50 p-4 rounded">
-          <p className="text-gray-600 text-sm">Redemptions</p>
+          <p className="text-gray-600 text-sm">
+            {COPY.dashboard.stats.totalRedemptions}
+          </p>
           <p className="text-2xl font-bold">
             {stats?.totalRedemptions || 0}
           </p>
         </div>
         <div className="bg-green-50 p-4 rounded">
-          <p className="text-gray-600 text-sm">Repositories</p>
+          <p className="text-gray-600 text-sm">
+            {COPY.dashboard.stats.totalRepos}
+          </p>
           <p className="text-2xl font-bold">
             {stats?.totalRepos || 0}
           </p>
         </div>
         <div className="bg-purple-50 p-4 rounded">
-          <p className="text-gray-600 text-sm">Teams</p>
+          <p className="text-gray-600 text-sm">
+            {COPY.dashboard.stats.totalLinks}
+          </p>
           <p className="text-2xl font-bold">
             {stats?.totalTeams || 0}
           </p>
@@ -89,7 +102,9 @@ export function LinkDetails({ linkId }: Props) {
 
       {redemptions.length > 0 && (
         <div>
-          <h4 className="font-bold mb-3">Redemptions</h4>
+          <h4 className="font-bold mb-3">
+            {COPY.dashboard.stats.totalRedemptions}
+          </h4>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-100">
@@ -101,9 +116,11 @@ export function LinkDetails({ linkId }: Props) {
                     Repository
                   </th>
                   <th className="px-4 py-2 text-left">
-                    Access
+                    {COPY.linkCard.accessLevel}
                   </th>
-                  <th className="px-4 py-2 text-left">Date</th>
+                  <th className="px-4 py-2 text-left">
+                    {COPY.linkCard.created}
+                  </th>
                 </tr>
               </thead>
               <tbody>
