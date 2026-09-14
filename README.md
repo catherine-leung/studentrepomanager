@@ -26,6 +26,7 @@ Automated repository management for classroom GitHub assignments.
 - **Auth:** NextAuth.js v4, GitHub OAuth
 - **GitHub Integration:** Octokit (App + REST)
 
+
 ## Development
 
 ```bash
