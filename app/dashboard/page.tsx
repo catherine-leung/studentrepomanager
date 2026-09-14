@@ -10,6 +10,17 @@ import { OrgSecurityBanner } from "@/components/OrgSecurityBanner";
 import { LinkCreationForm } from "@/components/LinkCreationForm";
 import { LinksList } from "@/components/LinksList";
 
+/**
+ * Get the GitHub App slug from environment or fallback.
+ * In production, set NEXT_PUBLIC_GITHUB_APP_SLUG.
+ */
+function getAppSlug(): string {
+  return (
+    process.env.NEXT_PUBLIC_GITHUB_APP_SLUG ||
+    "student-repo-manager"
+  );
+}
+
 export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -32,6 +43,10 @@ export default function Dashboard() {
     return null;
   }
 
+  const appSlug = getAppSlug();
+  const installUrl =
+    `https://github.com/apps/${appSlug}/installations/new`;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow">
@@ -41,6 +56,16 @@ export default function Dashboard() {
             Student Repo Manager
           </h1>
           <div className="flex items-center gap-4">
+            <a
+              href={installUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-green-600 text-white
+                         rounded-lg hover:bg-green-700
+                         transition text-sm font-medium"
+            >
+              + Add Organization
+            </a>
             <span className="text-gray-600">
               {session.user?.login}
             </span>

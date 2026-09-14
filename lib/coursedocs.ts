@@ -17,6 +17,7 @@ import {
   deleteGitHubTeam,
   deleteRepo,
   archiveRepo,
+  RepoExistsError,
   type RepoInfo,
 } from "./github-repos";
 import { getInstallationOctokit } from "./github-app";
@@ -33,12 +34,53 @@ export class CoursedocsRepoExistsError extends Error {
   }
 }
 
+/**
+ * GitHub rejected the repository request (422) for a reason
+ * other than a name collision. When a template is involved,
+ * this almost always means the template was un-templated or
+ * the app cannot read it.
+ */
+export class CoursedocsTemplateError extends Error {
+  constructor(detail: string | null) {
+    super(
+      "GitHub rejected the repository request" +
+      (detail ? `: ${detail}` : "") +
+      ". The template may no longer be marked as a " +
+      "template, or the app may not have access to it."
+    );
+    this.name = "CoursedocsTemplateError";
+  }
+}
+
 export interface ProvisionCoursedocsInput {
   linkDbId: number;
   linkId: string;
   orgName: string;
   installationId: number;
   assessmentName: string;
+  /** Optional template to generate the shared repo from. */
+  templateRepoUrl?: string | null;
+}
+
+function isStatus(error: unknown, status: number): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    (error as { status: unknown }).status === status
+  );
+}
+
+function githubErrorDetail(error: unknown): string | null {
+  const detail = (
+    error as {
+      response?: {
+        data?: { errors?: Array<{ message?: string }> };
+      };
+    }
+  ).response?.data?.errors?.[0]?.message;
+
+  return detail ?? null;
 }
 
 /**
@@ -52,26 +94,30 @@ async function rollbackGitHub(
   teamSlug: string | null,
   repoName: string | null
 ): Promise<void> {
-  const tasks: Promise<void>[] = [];
+  const tasks: Array<[string, Promise<void>]> = [];
 
   if (teamSlug) {
-    tasks.push(deleteGitHubTeam(octokit, org, teamSlug));
+    tasks.push([
+      `team ${org}/${teamSlug}`,
+      deleteGitHubTeam(octokit, org, teamSlug),
+    ]);
   }
 
   if (repoName) {
-    tasks.push(deleteRepo(octokit, org, repoName));
+    tasks.push([
+      `repo ${org}/${repoName}`,
+      deleteRepo(octokit, org, repoName),
+    ]);
   }
 
-  const results = await Promise.allSettled(tasks);
+  const results = await Promise.allSettled(
+    tasks.map(([, p]) => p)
+  );
 
   results.forEach((result, i) => {
     if (result.status === "rejected") {
-      const target = i === 0 && teamSlug
-        ? `team ${org}/${teamSlug}`
-        : `repo ${org}/${repoName}`;
-
       console.error(
-        `Coursedocs rollback failed for ${target}:`,
+        `Coursedocs rollback failed for ${tasks[i][0]}:`,
         result.reason
       );
     }
@@ -80,11 +126,13 @@ async function rollbackGitHub(
 
 /**
  * Provision a coursedocs link: create the GitHub team and
- * repository, grant team read access, and record everything
- * in the database using the teams table.
+ * repository (optionally from a template), grant team read
+ * access, and record everything in the teams table.
  *
  * @throws CoursedocsRepoExistsError if the derived repo name
  *   is already taken in the org
+ * @throws CoursedocsTemplateError if GitHub rejects the
+ *   generate/create request (422) for any other reason
  */
 export async function provisionCoursedocsLink(
   input: ProvisionCoursedocsInput
@@ -108,22 +156,29 @@ export async function provisionCoursedocsLink(
     );
     teamSlug = githubTeam.slug;
 
-    // 2. Create repository (strict: fail if exists)
+    // 2. Create repository, from template if provided
+    //    (strict: fail if the name already exists)
     try {
       createdRepo = await createRepo(
         octokit,
         input.orgName,
         repoName,
-        null
+        input.templateRepoUrl ?? null
       );
     } catch (error) {
-      // createRepo throws RepoExistsError on 422
-      if (error instanceof Error && error.name === "RepoExistsError") {
+      if (error instanceof RepoExistsError) {
         throw new CoursedocsRepoExistsError(
           input.orgName,
           repoName
         );
       }
+
+      if (isStatus(error, 422)) {
+        throw new CoursedocsTemplateError(
+          githubErrorDetail(error)
+        );
+      }
+
       throw error;
     }
 
@@ -151,7 +206,11 @@ export async function provisionCoursedocsLink(
     );
 
     // 6. Record repo on team
-    await setTeamRepo(team.id, createdRepo.name, createdRepo.htmlUrl);
+    await setTeamRepo(
+      team.id,
+      createdRepo.name,
+      createdRepo.htmlUrl
+    );
   } catch (error) {
     await rollbackGitHub(
       octokit,

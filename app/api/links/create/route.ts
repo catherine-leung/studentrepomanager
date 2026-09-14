@@ -1,8 +1,5 @@
 // app/api/links/create/route.ts
 
-import {
-  getInstallationIdForOrg,
-} from "@/lib/github-app";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/session";
 import { requireRole } from "@/lib/role-detection";
@@ -17,9 +14,13 @@ import { parseTemplateRepoUrl } from "@/lib/naming";
 import {
   provisionCoursedocsLink,
   CoursedocsRepoExistsError,
+  CoursedocsTemplateError,
 } from "@/lib/coursedocs";
 import { internalError } from "@/lib/api-errors";
-import { getInstallationOctokit } from "@/lib/github-app";
+import {
+  getInstallationIdForOrg,
+  getInstallationOctokit,
+} from "@/lib/github-app";
 
 export const maxDuration = 60;
 
@@ -36,6 +37,9 @@ interface CreateLinkBody {
   maxGroups?: unknown;
   expiresInDays?: unknown;
 }
+
+const TEMPLATE_URL_PATTERN =
+  /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/;
 
 function isLinkType(value: unknown): value is LinkType {
   return (
@@ -207,6 +211,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- Template URL (all link types) ------------------
+
+    if (
+      rawTemplateRepoUrl !== undefined &&
+      rawTemplateRepoUrl !== null &&
+      typeof rawTemplateRepoUrl !== "string"
+    ) {
+      return badRequest("templateRepoUrl must be a string");
+    }
+
+    const templateRepoUrl =
+      typeof rawTemplateRepoUrl === "string"
+        ? rawTemplateRepoUrl.trim()
+        : "";
+
+    if (
+      templateRepoUrl &&
+      !TEMPLATE_URL_PATTERN.test(templateRepoUrl)
+    ) {
+      return badRequest(
+        "templateRepoUrl must be a valid GitHub repository URL"
+      );
+    }
+
     const orgName = rawOrgName.trim();
     const assessmentName = rawAssessmentName.trim();
 
@@ -241,6 +269,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- Template must exist and be a template ----------
+    // Runs before any rows or GitHub resources are created,
+    // for every link type.
+
+    if (templateRepoUrl) {
+      try {
+        await validateTemplateRepository(
+          templateRepoUrl,
+          installationId
+        );
+      } catch (error) {
+        return badRequest(
+          error instanceof Error
+            ? error.message
+            : "Failed to validate template repository"
+        );
+      }
+    }
+
     // --- Coursedocs: pre-create team + repo -----------
 
     if (isCoursedocs) {
@@ -252,14 +299,15 @@ export async function POST(request: NextRequest) {
         "coursedocs",
         "read",
         authContext.login,
-        undefined,
+        templateRepoUrl || undefined,
         undefined,
         expiresAt,
         assessmentName,
         1
       );
 
-      // 2. Provision GitHub team + repo
+      // 2. Provision GitHub team + repo (from template if
+      //    one was supplied)
       try {
         await provisionCoursedocsLink({
           linkDbId: link.id,
@@ -267,6 +315,7 @@ export async function POST(request: NextRequest) {
           orgName,
           installationId,
           assessmentName,
+          templateRepoUrl: templateRepoUrl || null,
         });
       } catch (error) {
         // GitHub resources were already rolled back inside
@@ -289,6 +338,10 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        if (error instanceof CoursedocsTemplateError) {
+          return badRequest(error.message);
+        }
+
         throw error;
       }
 
@@ -300,30 +353,6 @@ export async function POST(request: NextRequest) {
     if (!isAccessLevel(rawAccessLevel)) {
       return badRequest(
         "accessLevel must be 'read', 'write', or 'admin'"
-      );
-    }
-
-    if (
-      rawTemplateRepoUrl !== undefined &&
-      rawTemplateRepoUrl !== null &&
-      typeof rawTemplateRepoUrl !== "string"
-    ) {
-      return badRequest("templateRepoUrl must be a string");
-    }
-
-    const templateRepoUrl =
-      typeof rawTemplateRepoUrl === "string"
-        ? rawTemplateRepoUrl.trim()
-        : "";
-
-    if (
-      templateRepoUrl &&
-      !/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/?$/.test(
-        templateRepoUrl
-      )
-    ) {
-      return badRequest(
-        "templateRepoUrl must be a valid GitHub repository URL"
       );
     }
 
@@ -348,21 +377,6 @@ export async function POST(request: NextRequest) {
       ) {
         return badRequest(
           "maxGroups must be an integer between 1 and 1000"
-        );
-      }
-    }
-
-    if (templateRepoUrl) {
-      try {
-        await validateTemplateRepository(
-          templateRepoUrl,
-          installationId
-        );
-      } catch (error) {
-        return badRequest(
-          error instanceof Error
-            ? error.message
-            : "Failed to validate template repository"
         );
       }
     }
@@ -394,6 +408,10 @@ export async function POST(request: NextRequest) {
         { error: error.message },
         { status: 409 }
       );
+    }
+
+    if (error instanceof CoursedocsTemplateError) {
+      return badRequest(error.message);
     }
 
     return internalError(

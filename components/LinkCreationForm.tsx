@@ -28,6 +28,19 @@ const INPUT_CLASS =
   "focus:outline-none focus:ring-2 focus:ring-blue-500 " +
   "disabled:bg-gray-100 disabled:text-gray-500";
 
+const TEMPLATE_HELP: Record<LinkType, string> = {
+  solo:
+    "Each student's repository is generated from this " +
+    "template. Leave blank for an empty repository.",
+  group:
+    "Each team's repository is generated from this " +
+    "template. Leave blank for an empty repository.",
+  coursedocs:
+    "The shared repository is generated from this " +
+    "template when the link is created. Leave blank " +
+    "for an empty repository.",
+};
+
 export function LinkCreationForm({
   orgName,
   onSuccess,
@@ -40,6 +53,7 @@ export function LinkCreationForm({
   const isCoursedocs = formData.linkType === "coursedocs";
   const isGroup = formData.linkType === "group";
   const isAdmin = formData.accessLevel === "admin";
+  const hasTemplate = formData.templateRepoUrl.trim() !== "";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -76,9 +90,7 @@ export function LinkCreationForm({
           accessLevel: isCoursedocs
             ? "read"
             : formData.accessLevel,
-          templateRepoUrl: isCoursedocs
-            ? ""
-            : formData.templateRepoUrl,
+          templateRepoUrl: formData.templateRepoUrl,
           maxTeamSize,
           maxGroups,
           expiresInDays,
@@ -208,7 +220,7 @@ export function LinkCreationForm({
         </div>
       </div>
 
-      {isAdmin && (
+      {isAdmin && !isCoursedocs && (
         <div
           className="mb-4 p-4 bg-red-50 border border-red-200
                      rounded text-red-900"
@@ -251,9 +263,13 @@ export function LinkCreationForm({
                      rounded text-sm text-blue-900"
         >
           A private repository and a team will be created{" "}
-          <strong>now</strong>. Every student who redeems
-          the link joins that team and gets read access to
-          the same repository.
+          <strong>now</strong>
+          {hasTemplate
+            ? ", with the repository generated from the " +
+              "template below"
+            : ""}
+          . Every student who redeems the link joins that
+          team and gets read access to the same repository.
         </div>
       )}
 
@@ -263,13 +279,8 @@ export function LinkCreationForm({
         </label>
         <input
           type="text"
-          placeholder={
-            isCoursedocs
-              ? "Not available for course documents"
-              : "https://github.com/org/template-repo"
-          }
-          value={isCoursedocs ? "" : formData.templateRepoUrl}
-          disabled={isCoursedocs}
+          placeholder="https://github.com/org/template-repo"
+          value={formData.templateRepoUrl}
           onChange={(e) =>
             setFormData({
               ...formData,
@@ -278,6 +289,9 @@ export function LinkCreationForm({
           }
           className={INPUT_CLASS}
         />
+        <p className="text-xs text-gray-500 mt-1">
+          {TEMPLATE_HELP[formData.linkType]}
+        </p>
       </div>
 
       {isGroup && (
@@ -368,7 +382,9 @@ export function LinkCreationForm({
       >
         {loading
           ? isCoursedocs
-            ? "Creating team and repository..."
+            ? hasTemplate
+              ? "Creating team and repository from template..."
+              : "Creating team and repository..."
             : "Creating..."
           : "Create Link"}
       </button>
