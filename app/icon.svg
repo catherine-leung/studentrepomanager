@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="32" y2="32"
+      gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4338bf" />
+      <stop offset="1" stop-color="#7c3aed" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#g)" />
+
+  <!-- trunk growing up from the repo node into the cap -->
+  <path d="M14 22.6 L14 9.4" stroke="#ffffff" stroke-width="2.2"
+    stroke-linecap="round" fill="none" />
+  <!-- branch off the trunk -->
+  <path d="M14 14.4 C18.5 14.4 18.5 19 20.8 19" stroke="#ffffff"
+    stroke-width="2.2" stroke-linecap="round" fill="none" />
+  <circle cx="14" cy="25" r="2.4" fill="#ffffff" />
+  <circle cx="23" cy="19" r="2.2" fill="#ffffff" />
+
+  <!-- mortarboard -->
+  <path d="M14 2.2 L19.6 6 L14 9.8 L8.4 6 Z" fill="#ffffff" />
+  <rect x="11.6" y="6.6" width="4.8" height="2.6" rx="0.8"
+    fill="#ffffff" />
+  <path d="M19.6 6 L19.6 10.4" stroke="#ffffff" stroke-width="1.3"
+    stroke-linecap="round" fill="none" />
+  <circle cx="19.6" cy="10.9" r="0.9" fill="#ffffff" />
+</svg>

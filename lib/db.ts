@@ -7,6 +7,7 @@ import {
   RepoCreationLink,
   Team,
   StudentRepoAccess,
+  RedemptionWithTeam,
 } from "./types";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -35,7 +36,7 @@ function isUniqueViolation(error: unknown): boolean {
 
 export class RepoLinkNotFoundError extends Error {
   constructor() {
-    super("Assignment link not found");
+    super("Link not found");
     this.name = "RepoLinkNotFoundError";
   }
 }
@@ -43,7 +44,7 @@ export class RepoLinkNotFoundError extends Error {
 export class RepoLinkHasRedemptionsError extends Error {
   constructor() {
     super(
-      "This assignment link has redemptions and can only " +
+      "This link has redemptions and can only " +
       "be deactivated"
     );
     this.name = "RepoLinkHasRedemptionsError";
@@ -54,7 +55,7 @@ export class TeamNameTakenError extends Error {
   constructor(teamName: string) {
     super(
       `A team named '${teamName}' already exists for this ` +
-      "assignment. Please choose a different name."
+      "link. Please choose a different name."
     );
     this.name = "TeamNameTakenError";
   }
@@ -63,7 +64,7 @@ export class TeamNameTakenError extends Error {
 export class AssessmentNameTakenError extends Error {
   constructor(assessmentName: string) {
     super(
-      `An assignment named '${assessmentName}' already ` +
+      `A link named '${assessmentName}' already ` +
       "exists in this organization. Please choose a " +
       "different name."
     );
@@ -229,7 +230,7 @@ export async function createRepoLink(
     assessmentName &&
     assessmentName.trim().length > 0
       ? assessmentName.trim()
-      : "Assignment";
+      : "Untitled Link";
 
   // Check if assessment name already exists for this org
   const exists = await assessmentNameExists(
@@ -651,10 +652,16 @@ export async function getTeamsWithMemberCounts(
     `;
 
     return many<Team & { memberCount: number }>(
-      result.map((row: any) => ({
-        ...row,
-        memberCount: Number(row.member_count),
-      }))
+      result.map((row) => {
+        const team = row as Team & {
+          member_count: string | number;
+        };
+
+        return {
+          ...team,
+          memberCount: Number(team.member_count),
+        };
+      })
     );
   } catch (error) {
     console.error(
@@ -1026,20 +1033,23 @@ export async function getLinkStats(
 
 export async function getLinkRedemptions(
   linkId: string
-): Promise<StudentRepoAccess[]> {
+): Promise<RedemptionWithTeam[]> {
   try {
+    // Left-joined with teams so group-type links can show who
+    // redeemed under which team, not just a flat list of names.
     const result = await sql`
-      SELECT sra.*
+      SELECT sra.*, t.team_name
       FROM student_repo_access AS sra
+      LEFT JOIN teams AS t ON t.id = sra.team_id
       WHERE sra.link_id = (
         SELECT id
         FROM repo_creation_links
         WHERE link_id = ${linkId}
       )
-      ORDER BY sra.created_at DESC
+      ORDER BY t.team_name ASC NULLS LAST, sra.created_at DESC
     `;
 
-    return many<StudentRepoAccess>(result);
+    return many<RedemptionWithTeam>(result);
   } catch (error) {
     console.error("Error getting link redemptions:", error);
     throw error;

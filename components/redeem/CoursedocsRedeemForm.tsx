@@ -2,6 +2,7 @@
 
 "use client";
 
+import { Button } from "@/components/ui/Button";
 import { COPY } from "@/lib/copy";
 
 interface Props {
@@ -11,31 +12,34 @@ interface Props {
 }
 
 export function CoursedocsRedeemForm({
-  repoName,
   onSubmit,
   loading,
 }: Props) {
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-xl font-bold mb-4">
+    <div
+      className="rounded-xl border border-neutral-200 bg-white
+                 p-6 shadow-sm"
+    >
+      <h2 className="mb-3 text-lg font-bold text-neutral-900">
         {COPY.redeem.coursedocs.title}
-      </h3>
+      </h2>
 
-      <p className="text-gray-600 mb-6">
+      <p className="mb-5 text-sm text-neutral-600">
         {COPY.redeem.coursedocs.message}
       </p>
 
-      <button
+      <Button
+        variant="primary"
+        size="lg"
+        className="w-full"
         onClick={() => onSubmit()}
         disabled={loading}
-        className="w-full bg-blue-600 text-white px-6 py-3
-                   rounded-lg hover:bg-blue-700 transition
-                   font-medium disabled:bg-gray-400"
+        isLoading={loading}
       >
         {loading
           ? COPY.redeem.coursedocs.granting
           : COPY.redeem.coursedocs.getAccessButton}
-      </button>
+      </Button>
     </div>
   );
 }

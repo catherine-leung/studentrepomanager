@@ -103,7 +103,7 @@ export async function getRepo(
   name: string
 ): Promise<RepoInfo | null> {
   try {
-    const { data } = await (octokit as any).request(
+    const { data } = await octokit.request(
       "GET /repos/{owner}/{repo}",
       { owner: org, repo: name }
     );
@@ -155,7 +155,7 @@ export async function createRepo(
       const template = parseTemplateRepoUrl(
         templateRepoUrl
       );
-      const { data } = await (octokit as any).request(
+      const { data } = await octokit.request(
         "POST /repos/{template_owner}/{template_repo}/generate",
         {
           template_owner: template.owner,
@@ -168,7 +168,7 @@ export async function createRepo(
       return extractRepoData(data);
     }
 
-    const { data } = await (octokit as any).request(
+    const { data } = await octokit.request(
       "POST /orgs/{org}/repos",
       {
         org,
@@ -213,7 +213,7 @@ export async function grantAccess(
   username: string,
   level: AccessLevel
 ): Promise<void> {
-  const response = await (appOctokit as any).request(
+  const response = await appOctokit.request(
     "PUT /repos/{owner}/{repo}/collaborators/{username}",
     {
       owner: org,
@@ -257,7 +257,7 @@ export async function createGitHubTeam(
   teamName: string
 ): Promise<{ id: number; slug: string }> {
   try {
-    const { data } = await (octokit as any).request(
+    const { data } = await octokit.request(
       "POST /orgs/{org}/teams",
       {
         org,
@@ -272,7 +272,7 @@ export async function createGitHubTeam(
       throw error;
     }
 
-    const { data } = await (octokit as any).request(
+    const { data } = await octokit.request(
       "GET /orgs/{org}/teams/{team_slug}",
       {
         org,
@@ -301,7 +301,7 @@ export async function getTeamMemberCount(
   org: string,
   teamSlug: string
 ): Promise<number> {
-  const { data } = await (octokit as any).request(
+  const { data } = await octokit.request(
     "GET /orgs/{org}/teams/{team_slug}/members",
     {
       org,
@@ -330,7 +330,7 @@ export async function addTeamMember(
   username: string,
   role: "member" | "maintainer" = "member"
 ): Promise<void> {
-  await (octokit as any).request(
+  await octokit.request(
     "PUT /orgs/{org}/teams/{team_slug}/memberships/{username}",
     {
       org,
@@ -358,7 +358,7 @@ export async function grantTeamRepoAccess(
   repo: string,
   permission: GitHubPermission
 ): Promise<void> {
-  await (octokit as any).request(
+  await octokit.request(
     "PUT /orgs/{org}/teams/{team_slug}/repos/{owner}/{repo}",
     {
       org,
@@ -379,7 +379,7 @@ export async function repoExists(
   name: string
 ): Promise<boolean> {
   try {
-    await (octokit as any).request(
+    await octokit.request(
       "GET /repos/{owner}/{repo}",
       { owner: org, repo: name }
     );
@@ -401,7 +401,7 @@ export async function deleteGitHubTeam(
   org: string,
   teamSlug: string
 ): Promise<void> {
-  await (octokit as any).request(
+  await octokit.request(
     "DELETE /orgs/{org}/teams/{team_slug}",
     { org, team_slug: teamSlug }
   );
@@ -417,7 +417,7 @@ export async function deleteRepo(
   org: string,
   repo: string
 ): Promise<void> {
-  await (octokit as any).request(
+  await octokit.request(
     "DELETE /repos/{owner}/{repo}",
     { owner: org, repo }
   );
@@ -450,7 +450,7 @@ export async function archiveRepo(
   const truncatedName = newName.slice(0, 100);
 
   // Rename first; archived repos reject further edits.
-  await (octokit as any).request(
+  await octokit.request(
     "PATCH /repos/{owner}/{repo}",
     {
       owner: org,
@@ -459,7 +459,7 @@ export async function archiveRepo(
     }
   );
 
-  await (octokit as any).request(
+  await octokit.request(
     "PATCH /repos/{owner}/{repo}",
     {
       owner: org,

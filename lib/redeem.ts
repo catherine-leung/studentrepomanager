@@ -59,21 +59,21 @@ type LinkWithOrg = RepoCreationLink & {
 
 export class LinkNotFoundError extends Error {
   constructor(linkId: string) {
-    super(`Assignment link '${linkId}' not found`);
+    super(`Link '${linkId}' not found`);
     this.name = "LinkNotFoundError";
   }
 }
 
 export class LinkInactiveError extends Error {
   constructor() {
-    super("This assignment link is inactive");
+    super("This link is inactive");
     this.name = "LinkInactiveError";
   }
 }
 
 export class LinkExpiredError extends Error {
   constructor() {
-    super("This assignment link has expired");
+    super("This link has expired");
     this.name = "LinkExpiredError";
   }
 }
@@ -139,7 +139,7 @@ export class RepoNameTakenError extends Error {
 export class MaxGroupsReachedError extends Error {
   constructor() {
     super(
-      "The maximum number of groups for this assignment " +
+      "The maximum number of groups for this link " +
       "has been reached. No new groups can be created."
     );
     this.name = "MaxGroupsReachedError";
@@ -392,7 +392,7 @@ async function resolveTeam(
 
     if (team.link_id !== link.id) {
       throw new InvalidTeamChoiceError(
-        "Team does not belong to this assignment"
+        "Team does not belong to this link"
       );
     }
 
@@ -428,7 +428,7 @@ async function resolveTeam(
   if (!choice.newTeamName) {
     throw new InvalidTeamChoiceError(
       "Team ID or new team name is required for group " +
-      "assignments"
+      "links"
     );
   }
 
@@ -676,7 +676,7 @@ export async function redeemLink(
     } else {
       if (!team) {
         throw new Error(
-          "Team must be resolved for group assignments"
+          "Team must be resolved for group links"
         );
       }
 
@@ -734,7 +734,7 @@ export async function redeemLink(
       );
     } else {
       if (!team) {
-        throw new Error("Team must exist for group assignment");
+        throw new Error("Team must exist for group link");
       }
 
       // Create the GitHub team on first redemption and record

@@ -8,8 +8,13 @@ import { useEffect, useState, Suspense } from "react";
 import { JoinOrgPrompt } from "@/components/redeem/JoinOrgPrompt";
 import { TeamSelector } from "@/components/redeem/TeamSelector";
 import { RedeemSuccess } from "@/components/redeem/RedeemSuccess";
+import { RedeemNav } from "@/components/redeem/RedeemNav";
 import { SoloRedeemForm } from "@/components/redeem/SoloRedeemForm";
 import { CoursedocsRedeemForm } from "@/components/redeem/CoursedocsRedeemForm";
+import { GitHubMark } from "@/components/ui/GitHubMark";
+import { Alert } from "@/components/ui/Alert";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 
 interface PageData {
   link: {
@@ -42,20 +47,29 @@ interface RedemptionSummary {
 }
 
 const TYPE_LABELS = {
-  solo: "Individual Assignment",
-  group: "Group Assignment",
+  solo: "Individual Repository",
+  group: "Group Repository",
   coursedocs: "Course Documents (shared, read-only)",
+} as const;
+
+const TYPE_BADGE_COLOR = {
+  solo: "blue",
+  group: "purple",
+  coursedocs: "gray",
 } as const;
 
 function Spinner({ message }: { message: string }) {
   return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
+    <div className="flex min-h-screen items-center
+                    justify-center bg-canvas">
+      <div className="text-center" role="status">
         <div
-          className="animate-spin rounded-full h-12 w-12
-                     border-b-2 border-blue-600 mx-auto mb-4"
+          aria-hidden="true"
+          className="mx-auto mb-4 h-10 w-10 animate-spin
+                     rounded-full border-2 border-primary-200
+                     border-t-primary-600"
         />
-        <p className="text-gray-600">{message}</p>
+        <p className="text-sm text-neutral-500">{message}</p>
       </div>
     </div>
   );
@@ -105,7 +119,7 @@ function RedeemContent() {
 
         if (!response.ok) {
           throw new Error(
-            data.error || "Failed to load assignment"
+            data.error || "Failed to load link"
           );
         }
 
@@ -117,7 +131,7 @@ function RedeemContent() {
           setError(
             err instanceof Error
               ? err.message
-              : "Failed to load assignment"
+              : "Failed to load link"
           );
         }
       } finally {
@@ -175,26 +189,28 @@ function RedeemContent() {
   }
 
   if (loading || status === "loading") {
-    return <Spinner message="Loading assignment..." />;
+    return <Spinner message="Loading link..." />;
   }
 
   if (error || !pageData) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">
+      <div className="flex min-h-screen items-center
+                      justify-center bg-canvas px-4">
+        <div className="w-full max-w-md rounded-xl border
+                        border-neutral-200 bg-white p-8
+                        text-center shadow-sm">
+          <h1 className="mb-2 text-xl font-bold text-error">
             Error
           </h1>
-          <p className="text-gray-600 mb-6">
-            {error || "Assignment not found"}
+          <p className="mb-6 text-sm text-neutral-600">
+            {error || "Link not found"}
           </p>
-          <button
+          <Button
+            variant="primary"
             onClick={() => router.push("/")}
-            className="bg-blue-600 text-white px-6 py-2
-                       rounded-lg hover:bg-blue-700 transition"
           >
             Go Home
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -202,26 +218,32 @@ function RedeemContent() {
 
   if (status === "unauthenticated") {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md">
-          <h1 className="text-2xl font-bold mb-4">
+      <div className="flex min-h-screen items-center
+                      justify-center bg-canvas px-4">
+        <div className="w-full max-w-md rounded-xl border
+                        border-primary-100 bg-white p-8
+                        text-center shadow-md">
+          <h1 className="mb-2 text-xl font-bold
+                        text-neutral-900">
             {pageData.link.assessment_name}
           </h1>
-          <p className="text-gray-600 mb-6">
-            Sign in with GitHub to redeem this assignment.
+          <p className="mb-6 text-sm text-neutral-600">
+            Sign in with GitHub to redeem this link.
           </p>
-          <button
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full bg-neutral-900
+                       hover:bg-neutral-800"
             onClick={() =>
               signIn("github", {
                 callbackUrl: `/redeem/${linkId}`,
               })
             }
-            className="bg-black text-white px-6 py-3
-                       rounded-lg hover:bg-gray-800 transition
-                       font-medium"
           >
+            <GitHubMark className="h-5 w-5" />
             Sign in with GitHub
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -258,19 +280,23 @@ function RedeemContent() {
     new Date(pageData.link.expires_at) < new Date();
 
   const unavailableReason = !pageData.link.is_active
-    ? "This assignment link has been deactivated."
+    ? "This link has been deactivated."
     : isExpired
-      ? "This assignment link has expired."
+      ? "This link has expired."
       : null;
 
   if (unavailableReason) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md">
-          <h1 className="text-2xl font-bold mb-4">
+      <div className="flex min-h-screen items-center
+                      justify-center bg-canvas px-4">
+        <div className="w-full max-w-md rounded-xl border
+                        border-neutral-200 bg-white p-8
+                        text-center shadow-sm">
+          <h1 className="mb-2 text-xl font-bold
+                        text-neutral-900">
             {pageData.link.assessment_name}
           </h1>
-          <p className="text-gray-600">
+          <p className="text-sm text-neutral-600">
             {unavailableReason} Please contact your
             instructor.
           </p>
@@ -297,31 +323,34 @@ function RedeemContent() {
     pageData.link.current_groups < pageData.link.max_groups;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow">
-        <div className="max-w-2xl mx-auto px-4 py-4">
-          <h1 className="text-2xl font-bold">
-            Student Repo Manager
-          </h1>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-canvas">
+      <RedeemNav />
 
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <h2 className="text-2xl font-bold mb-2">
-            {pageData.link.assessment_name}
-          </h2>
-          <p className="text-gray-600">
-            {TYPE_LABELS[pageData.link.link_type]}
+      <main className="mx-auto max-w-2xl px-4 py-8">
+        <div className="mb-6 rounded-xl border
+                        border-neutral-200 bg-white p-6
+                        shadow-sm">
+          <div className="mb-1 flex flex-wrap items-center
+                          gap-2">
+            <h1 className="text-xl font-bold
+                          text-neutral-900">
+              {pageData.link.assessment_name}
+            </h1>
+            <Badge color={TYPE_BADGE_COLOR[
+              pageData.link.link_type
+            ]}>
+              {TYPE_LABELS[pageData.link.link_type]
+                .split(" (")[0]}
+            </Badge>
+          </div>
+          <p className="text-sm text-neutral-500">
+            {pageData.link.org_name}
           </p>
         </div>
 
         {redeemError && (
-          <div
-            className="mb-6 p-4 bg-red-50 border
-                       border-red-200 rounded text-red-700"
-          >
-            {redeemError}
+          <div className="mb-6">
+            <Alert type="error" message={redeemError} />
           </div>
         )}
 

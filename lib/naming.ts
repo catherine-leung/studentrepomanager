@@ -52,7 +52,7 @@ export function buildRepoName(
   assessmentName: string,
   suffix: string
 ): string {
-  const base = slugify(assessmentName) || "assignment";
+  const base = slugify(assessmentName) || "link";
   const tail = slugify(suffix);
 
   if (!tail) {

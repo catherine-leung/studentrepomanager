@@ -61,6 +61,13 @@ export interface StudentRepoAccess {
   created_at: string;
 }
 
+// A redemption row left-joined with its team (group links only —
+// team_name is null for solo/coursedocs redemptions, which have
+// no team_id at all).
+export interface RedemptionWithTeam extends StudentRepoAccess {
+  team_name: string | null;
+}
+
 // ============================================================================
 // NextAuth Module Augmentation
 // ============================================================================

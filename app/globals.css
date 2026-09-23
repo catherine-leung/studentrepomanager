@@ -1,32 +1,116 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* app/globals.css */
 
-* {
+@import "tailwindcss";
+
+@theme {
+  /* Primary: purplish medium blue (indigo) */
+  --color-primary-50: #eef1fe;
+  --color-primary-100: #e0e4fd;
+  --color-primary-200: #c7cdfb;
+  --color-primary-300: #a5aef7;
+  --color-primary-400: #818cf1;
+  --color-primary-500: #6366e9;
+  --color-primary-600: #4f4ddb;
+  --color-primary-700: #4338bf;
+  --color-primary-800: #372f9b;
+  --color-primary-900: #2e2a79;
+
+  /* Accent: violet, for playful highlights/gradients */
+  --color-accent-50: #f5f3ff;
+  --color-accent-100: #ede8fe;
+  --color-accent-500: #8b5cf6;
+  --color-accent-600: #7c3aed;
+  --color-accent-700: #6d28d9;
+
+  /* App canvas: an indigo-tinted background so pages read as
+     part of the product instead of flat white-on-white. Uses
+     the same tone as primary-50 rather than an invented
+     near-white value, so it stays visible even on monitors with
+     less contrast/color depth. */
+  --color-canvas: #eef1fe;
+
+  /* Neutral scale */
+  --color-neutral-50: #f9fafb;
+  --color-neutral-100: #f3f4f6;
+  --color-neutral-200: #e5e7eb;
+  --color-neutral-300: #d1d5db;
+  --color-neutral-400: #9ca3af;
+  --color-neutral-500: #6b7280;
+  --color-neutral-600: #4b5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #1f2937;
+  --color-neutral-900: #111827;
+
+  /* Semantic colors */
+  --color-success: #16a34a;
+  --color-warning: #ea580c;
+  --color-error: #dc2626;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* System UI monospace stack — sans-serif in style (no slab
+     serifs like Courier New), matches the app's sans-serif look,
+     and needs no font file to load. */
+  --font-mono: ui-monospace, "SF Mono", "Menlo", "Consolas",
+    "Liberation Mono", monospace;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
+/*
+ * Scoped reset — NOT a universal `* { margin: 0; padding: 0; }`.
+ * That selector was overriding Tailwind's own padding/border
+ * utilities on buttons and inputs, making them invisible.
+ */
+html,
+body {
   margin: 0;
   padding: 0;
-  box-sizing: border-box;
 }
 
 html {
   scroll-behavior: smooth;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont,
-    "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
-    "Cantarell", "Fira Sans", "Droid Sans",
-    "Helvetica Neue", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-input:disabled,
-button:disabled {
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-neutral-50);
+  color: var(--color-neutral-900);
+}
+
+button:disabled,
+input:disabled {
   cursor: not-allowed;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Layered (not global) so Tailwind utility classes like
+   text-white can still override link color/underline on a
+   per-element basis -- unlayered rules always beat layered
+   ones under CSS cascade-layer rules, no matter how specific
+   the utility class is. */
+@layer base {
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }

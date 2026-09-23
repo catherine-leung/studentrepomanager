@@ -45,7 +45,7 @@ export async function POST(
 
     if (!link) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }
@@ -59,7 +59,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "This assignment link is no longer available",
+            "This link is no longer available",
         },
         { status: 403 }
       );

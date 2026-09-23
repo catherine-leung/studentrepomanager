@@ -4,7 +4,7 @@
 
 CREATE TABLE organizations (
   id SERIAL PRIMARY KEY,
-  org_name VARCHAR(255) NOT NULL UNIQUE,
+  org_name VARCHAR(255) NOT NULL,
   installation_id BIGINT NOT NULL UNIQUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_verified_at TIMESTAMP,

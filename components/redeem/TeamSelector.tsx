@@ -3,6 +3,8 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
 import { COPY } from "@/lib/copy";
 
 interface Team {
@@ -32,9 +34,6 @@ export function TeamSelector({
   onCreateTeam,
   loading,
 }: Props) {
-  const [mode, setMode] = useState<"select" | "create">(
-    "select"
-  );
   const [newTeamName, setNewTeamName] = useState("");
   const [expectedTeamSize, setExpectedTeamSize] = useState(
     maxTeamSize?.toString() || "2"
@@ -66,152 +65,164 @@ export function TeamSelector({
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Join Existing Team */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-xl font-bold mb-4">
+      <div
+        className="rounded-xl border border-neutral-200 bg-white
+                   p-6 shadow-sm"
+      >
+        <h2 className="mb-4 text-lg font-bold text-neutral-900">
           {COPY.redeem.group.joinTeam}
-        </h3>
+        </h2>
 
         {availableTeams.length === 0 ? (
-          <p className="text-gray-600 mb-4">
+          <p className="text-sm text-neutral-600">
             {canCreateTeam
               ? COPY.redeem.group.noTeamsAvailable
               : COPY.redeem.group.noTeamsMax}
           </p>
         ) : (
           <>
-            <div className="space-y-2 mb-4">
-              {availableTeams.map((team) => (
-                <label
-                  key={team.id}
-                  className="flex items-center p-3 border
-                             border-gray-300 rounded-lg
-                             hover:bg-gray-50 cursor-pointer"
-                >
-                  <input
-                    type="radio"
-                    name="team"
-                    value={team.id}
-                    checked={selectedTeamId === team.id}
-                    onChange={(e) =>
-                      setSelectedTeamId(
-                        Number(e.target.value)
-                      )
-                    }
-                    className="mr-3"
-                  />
-                  <div>
-                    <p className="font-medium">
-                      {team.team_name}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {team.memberCount ?? 0} /{" "}
-                      {team.expected_team_size ?? "?"}{" "}
-                      {COPY.redeem.group.members}
-                    </p>
-                  </div>
-                </label>
-              ))}
+            <div className="mb-4 space-y-2">
+              {availableTeams.map((team) => {
+                const isSelected = selectedTeamId === team.id;
+                return (
+                  <label
+                    key={team.id}
+                    className={`flex cursor-pointer items-center
+                               gap-3 rounded-lg border p-3
+                               transition-colors ${
+                                 isSelected
+                                   ? "border-primary-400 " +
+                                     "bg-primary-50"
+                                   : "border-neutral-200 " +
+                                     "hover:border-primary-200 " +
+                                     "hover:bg-primary-50/40"
+                               }`}
+                  >
+                    <input
+                      type="radio"
+                      name="team"
+                      value={team.id}
+                      checked={isSelected}
+                      onChange={(e) =>
+                        setSelectedTeamId(
+                          Number(e.target.value)
+                        )
+                      }
+                      className="h-4 w-4 shrink-0
+                                 accent-primary-600"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className="font-medium
+                                   text-neutral-900"
+                      >
+                        {team.team_name}
+                      </p>
+                      <p className="text-xs text-neutral-500">
+                        {team.memberCount ?? 0} /{" "}
+                        {team.expected_team_size ?? "?"}{" "}
+                        {COPY.redeem.group.members}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
 
-            <button
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
               onClick={handleSelectTeam}
               disabled={loading || selectedTeamId === null}
-              className="w-full bg-blue-600 text-white px-6
-                         py-3 rounded-lg hover:bg-blue-700
-                         transition font-medium
-                         disabled:bg-gray-400"
+              isLoading={loading}
             >
               {loading
                 ? COPY.redeem.group.joining
                 : COPY.redeem.group.joinButton}
-            </button>
+            </Button>
           </>
         )}
       </div>
 
       {/* Create New Team */}
       {canCreateTeam ? (
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-xl font-bold mb-4">
+        <div
+          className="rounded-xl border border-neutral-200
+                     bg-white p-6 shadow-sm"
+        >
+          <h2
+            className="mb-4 text-lg font-bold text-neutral-900"
+          >
             {COPY.redeem.group.createTeam}
-          </h3>
+          </h2>
 
           <form onSubmit={handleCreateTeam}>
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
-                {COPY.redeem.group.teamNameLabel}
-              </label>
-              <input
-                type="text"
-                placeholder={COPY.redeem.group.teamNamePlaceholder}
+              <Input
+                label={COPY.redeem.group.teamNameLabel}
+                placeholder={
+                  COPY.redeem.group.teamNamePlaceholder
+                }
                 value={newTeamName}
                 onChange={(e) =>
                   setNewTeamName(e.target.value)
                 }
                 maxLength={255}
-                className="w-full px-4 py-2 border
-                           border-gray-300 rounded-lg
-                           focus:outline-none
-                           focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium mb-2">
-                {COPY.redeem.group.expectedSizeLabel}
-              </label>
-              <input
+            <div className="mb-5">
+              <Input
                 type="number"
+                label={COPY.redeem.group.expectedSizeLabel}
                 min="1"
                 max={maxTeamSize || 100}
                 value={expectedTeamSize}
                 onChange={(e) =>
                   setExpectedTeamSize(e.target.value)
                 }
-                className="w-full px-4 py-2 border
-                           border-gray-300 rounded-lg
-                           focus:outline-none
-                           focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-gray-500 mt-2">
-                {COPY.redeem.group.maxAllowed}
-                <span className="font-bold">
-                  {" "}
+              <p className="mt-2 text-xs text-neutral-500">
+                {COPY.redeem.group.maxAllowed}{" "}
+                <span className="font-bold text-neutral-900">
                   {maxTeamSize || "Unlimited"}
                 </span>
               </p>
             </div>
 
-            <button
+            <Button
               type="submit"
+              variant="primary"
+              size="lg"
+              className="w-full"
               disabled={
                 loading ||
                 !newTeamName.trim() ||
                 !expectedTeamSize
               }
-              className="w-full bg-green-600 text-white px-6
-                         py-3 rounded-lg hover:bg-green-700
-                         transition font-medium
-                         disabled:bg-gray-400"
+              isLoading={loading}
             >
               {loading
                 ? COPY.redeem.group.creating
                 : COPY.redeem.group.createButton}
-            </button>
+            </Button>
           </form>
         </div>
       ) : (
         <div
-          className="bg-white rounded-lg shadow p-6
-                     text-gray-600"
+          className="rounded-xl border border-neutral-200
+                     bg-white p-6 shadow-sm text-neutral-600"
         >
-          <h3 className="text-xl font-bold mb-2 text-gray-800">
+          <h2
+            className="mb-2 text-lg font-bold text-neutral-900"
+          >
             {COPY.redeem.group.createTeam}
-          </h3>
-          <p>
-            The maximum number of teams for this assignment
+          </h2>
+          <p className="text-sm">
+            The maximum number of teams for this link
             has been reached. Please join an existing team
             above.
           </p>

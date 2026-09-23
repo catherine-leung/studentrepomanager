@@ -4,6 +4,9 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
+import { Alert } from "@/components/ui/Alert";
+import { Select } from "@/components/ui/Select";
+import { recordSeenOrgs } from "@/lib/org-welcome-tracker";
 import { COPY } from "@/lib/copy";
 
 interface Organization {
@@ -34,10 +37,19 @@ export function OrganizationSelector({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchOrgs() {
-      if (!session?.user?.login) {
-        setLoading(false);
+    const userLogin = session?.user?.login;
+    let cancelled = false;
+
+    async function fetchOrgs(options: { silent: boolean }) {
+      if (!userLogin) {
+        if (!options.silent) {
+          setLoading(false);
+        }
         return;
+      }
+
+      if (!options.silent) {
+        setLoading(true);
       }
 
       try {
@@ -50,11 +62,20 @@ export function OrganizationSelector({
           );
         }
 
-        const data = await response.json();
+        const data = (await response.json()) as Organization[];
+
+        if (cancelled) {
+          return;
+        }
 
         setOrgs(data);
         setError(null);
+        recordSeenOrgs(data.map((org) => org.login));
       } catch (err) {
+        if (cancelled) {
+          return;
+        }
+
         setError(
           err instanceof Error
             ? err.message
@@ -62,40 +83,76 @@ export function OrganizationSelector({
         );
         setOrgs([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
-    fetchOrgs();
+    fetchOrgs({ silent: false });
+
+    // "+ Add Organization" opens GitHub's install flow in a new
+    // tab, so this tab's org list won't include it until we
+    // check again. Refetch (quietly, no loading spinner) when
+    // this tab regains focus, so coming back from that tab
+    // picks up the new org without a manual reload.
+    function handleFocus() {
+      fetchOrgs({ silent: true });
+    }
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
+    };
   }, [session?.user?.login]);
 
   const appSlug = getAppSlug();
 
   if (loading) {
     return (
-      <div className="text-gray-600">
-        Loading organizations...
+      <div
+        className="mb-6 flex items-center gap-2
+                   text-sm text-neutral-500"
+        role="status"
+      >
+        <span
+          aria-hidden="true"
+          className="h-3.5 w-3.5 animate-spin rounded-full
+                     border-2 border-neutral-300
+                     border-t-primary-600"
+        />
+        Loading organizations…
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="text-red-600 p-4 bg-red-50 rounded mb-6">
-        <p className="font-bold">
-          Error loading organizations:
-        </p>
-        <p>{error}</p>
-        <p className="text-sm mt-2">
+      <div className="mb-6">
+        <Alert
+          type="error"
+          title="Couldn't load organizations"
+          message={error}
+        />
+        <p className="mt-2 text-sm text-neutral-600">
           Make sure the GitHub App is installed in at least
-          one organization.
-        </p>
-        <p className="text-sm mt-2">
+          one organization.{" "}
           <a
-            href={`https://github.com/apps/${appSlug}/installations`}
+            href={
+              `https://github.com/apps/${appSlug}` +
+              "/installations"
+            }
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="font-medium text-primary-600
+                       hover:text-primary-700
+                       focus-visible:outline-none
+                       focus-visible:ring-2
+                       focus-visible:ring-primary-500
+                       focus-visible:ring-offset-2
+                       rounded-sm"
           >
             Manage app installations →
           </a>
@@ -106,20 +163,30 @@ export function OrganizationSelector({
 
   if (orgs.length === 0) {
     return (
-      <div className="text-gray-600 p-4 bg-yellow-50 rounded mb-6">
-        <p className="font-bold">
-          No organizations with app installed
-        </p>
-        <p>
-          Install the GitHub App in your organizations
-          to get started.
-        </p>
-        <p className="text-sm mt-2">
+      <div className="mb-6">
+        <Alert
+          type="warning"
+          title="No organizations with the app installed"
+          message={
+            "Install the GitHub App in your organization " +
+            "to get started."
+          }
+        />
+        <p className="mt-2 text-sm text-neutral-600">
           <a
-            href={`https://github.com/apps/${appSlug}/installations/new`}
+            href={
+              `https://github.com/apps/${appSlug}` +
+              "/installations/new"
+            }
             target="_blank"
             rel="noopener noreferrer"
-            className="text-blue-600 hover:underline"
+            className="font-medium text-primary-600
+                       hover:text-primary-700
+                       focus-visible:outline-none
+                       focus-visible:ring-2
+                       focus-visible:ring-primary-500
+                       focus-visible:ring-offset-2
+                       rounded-sm"
           >
             Install app in organization →
           </a>
@@ -129,28 +196,24 @@ export function OrganizationSelector({
   }
 
   return (
-    <div className="mb-6">
-      <label className="block text-sm font-medium mb-2">
-        Select Organization
-      </label>
-      <select
+    <div className="mb-6 max-w-sm">
+      <Select
+        label="Select organization"
         value={selectedOrg || ""}
         onChange={(e) => onSelect(e.target.value)}
-        className="w-full px-4 py-2 border border-gray-300
-                   rounded-lg focus:outline-none
-                   focus:ring-2 focus:ring-blue-500"
-      >
-        <option value="">-- Choose an organization --</option>
-        {orgs.map((org) => (
-          <option key={org.id} value={org.login}>
-            {org.login}
-          </option>
-        ))}
-      </select>
-      <p className="text-xs text-gray-500 mt-2">
-        Showing {orgs.length} organization
-        {orgs.length !== 1 ? "s" : ""} with app installed
-      </p>
+        hint={
+          `Showing ${orgs.length} organization` +
+          `${orgs.length !== 1 ? "s" : ""} with the app ` +
+          "installed"
+        }
+        options={[
+          { value: "", label: "— Choose an organization —" },
+          ...orgs.map((org) => ({
+            value: org.login,
+            label: org.login,
+          })),
+        ]}
+      />
     </div>
   );
 }

@@ -39,7 +39,7 @@ export async function getOrgMembershipState(
       installationId
     );
 
-    const { data } = await (octokit as any).request(
+    const { data } = await octokit.request(
       "GET /orgs/{org}/memberships/{username}",
       {
         org: orgName,
@@ -53,7 +53,7 @@ export async function getOrgMembershipState(
     );
 
     // GitHub returns state: "active" or "pending"
-    return (data as any).state === "active"
+    return data.state === "active"
       ? "active"
       : "pending";
   } catch (error) {

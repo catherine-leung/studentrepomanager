@@ -42,7 +42,7 @@ async function requireLinkOwner(
     return {
       link: null,
       error: NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       ),
     };
@@ -90,7 +90,7 @@ export async function PATCH(
 
     if (!link) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }
@@ -114,7 +114,7 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof RepoLinkNotFoundError) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }
@@ -150,7 +150,7 @@ export async function DELETE(
 
     if (!link) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }
@@ -196,7 +196,7 @@ export async function DELETE(
 
     if (error instanceof RepoLinkNotFoundError) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }

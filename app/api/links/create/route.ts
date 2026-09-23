@@ -89,7 +89,7 @@ async function validateTemplateRepository(
     const octokit = await getInstallationOctokit(
       installationId
     );
-    const response = await (octokit as any).request(
+    const response = await octokit.request(
       "GET /repos/{owner}/{repo}",
       { owner, repo }
     );
@@ -356,27 +356,40 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const maxTeamSize = Number(rawMaxTeamSize);
-    const maxGroups = Number(rawMaxGroups);
+    const maxTeamSizeProvided =
+      rawMaxTeamSize !== undefined &&
+      rawMaxTeamSize !== null &&
+      rawMaxTeamSize !== "";
+    const maxGroupsProvided =
+      rawMaxGroups !== undefined &&
+      rawMaxGroups !== null &&
+      rawMaxGroups !== "";
+
+    const maxTeamSize = maxTeamSizeProvided
+      ? Number(rawMaxTeamSize)
+      : undefined;
+    const maxGroups = maxGroupsProvided
+      ? Number(rawMaxGroups)
+      : undefined;
 
     if (rawLinkType === "group") {
       if (
-        !Number.isInteger(maxTeamSize) ||
-        maxTeamSize < 2 ||
-        maxTeamSize > 10
+        maxTeamSizeProvided &&
+        (!Number.isInteger(maxTeamSize) || maxTeamSize! < 2)
       ) {
         return badRequest(
-          "maxTeamSize must be an integer between 2 and 10"
+          "maxTeamSize must be an integer of 2 or more, " +
+          "or left blank for unlimited"
         );
       }
 
       if (
-        !Number.isInteger(maxGroups) ||
-        maxGroups < 1 ||
-        maxGroups > 1000
+        maxGroupsProvided &&
+        (!Number.isInteger(maxGroups) || maxGroups! < 1)
       ) {
         return badRequest(
-          "maxGroups must be an integer between 1 and 1000"
+          "maxGroups must be an integer of 1 or more, " +
+          "or left blank for unlimited"
         );
       }
     }

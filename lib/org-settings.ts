@@ -36,7 +36,7 @@ export async function readOrgBasePermission(
   octokit: Octokit,
   org: string
 ): Promise<BasePermission> {
-  const { data } = await (octokit as any).request(
+  const { data } = await octokit.request(
     "GET /orgs/{org}",
     {
       org,
@@ -85,7 +85,7 @@ export async function applyOrgSecuritySettings(
 ): Promise<void> {
   const octokit = await getInstallationOctokit(installationId);
 
-  await (octokit as any).request("PATCH /orgs/{org}", {
+  await octokit.request("PATCH /orgs/{org}", {
     org,
     default_repository_permission: "none",
     members_can_create_repositories: false,

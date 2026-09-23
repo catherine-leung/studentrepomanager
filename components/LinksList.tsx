@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { RepoCreationLink } from "@/lib/types";
+import { Alert } from "@/components/ui/Alert";
 import { LinkCard } from "./LinkCard";
 import { COPY } from "@/lib/copy";
 
@@ -71,37 +72,64 @@ export function LinksList({
 
   if (loading) {
     return (
-      <div className="text-gray-600">
-        Loading links...
+      <div
+        className="flex items-center gap-2 text-sm
+                   text-neutral-500"
+        role="status"
+      >
+        <div
+          aria-hidden="true"
+          className="h-4 w-4 animate-spin rounded-full
+                     border-2 border-neutral-200
+                     border-t-primary-600"
+        />
+        Loading links…
       </div>
     );
   }
 
   if (error) {
-    return <div className="text-red-600">{error}</div>;
+    return <Alert type="error" message={error} />;
   }
 
   if (links.length === 0) {
     return (
-      <div className="text-gray-600">
+      <div
+        className="rounded-xl border border-dashed
+                   border-neutral-300 bg-white p-8 text-center
+                   text-sm text-neutral-500"
+      >
         {COPY.dashboard.noLinks}
       </div>
     );
   }
 
+  const activeCount = links.filter((l) => l.is_active).length;
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-xl font-bold">
-        {COPY.dashboard.title}
-      </h2>
-      {links.map((link) => (
-        <LinkCard
-          key={link.id}
-          link={link}
-          onDelete={handleDelete}
-          onStatusChange={handleStatusChange}
-        />
-      ))}
+    <div>
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-lg font-bold text-neutral-900">
+          {COPY.dashboard.title}
+        </h2>
+        <span className="text-sm text-neutral-500">
+          {activeCount} of {links.length} active
+        </span>
+      </div>
+      <div
+        className="divide-y divide-neutral-100 overflow-hidden
+                   rounded-xl border border-neutral-200 bg-white
+                   shadow-sm"
+      >
+        {links.map((link) => (
+          <LinkCard
+            key={link.id}
+            link={link}
+            onDelete={handleDelete}
+            onStatusChange={handleStatusChange}
+          />
+        ))}
+      </div>
     </div>
   );
 }

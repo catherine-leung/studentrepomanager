@@ -3,8 +3,8 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Student Repo Manager",
-  description: "Automated student repository management",
+  title: "Academic Repository Manager",
+  description: "Automated repository management",
 };
 
 export default function RootLayout({

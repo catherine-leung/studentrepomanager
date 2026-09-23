@@ -82,7 +82,7 @@ export async function GET(
 
     if (!link) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }
@@ -226,7 +226,7 @@ export async function POST(
 
     if (!link) {
       return NextResponse.json(
-        { error: "Assignment link not found" },
+        { error: "Link not found" },
         { status: 404 }
       );
     }
