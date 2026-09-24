@@ -2,9 +2,9 @@
 
 "use client";
 
-import { signIn, useSession } from "next-auth/react";
+import { signIn, signOut, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, Suspense } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { Button } from "@/components/ui/Button";
 import { GitHubMark } from "@/components/ui/GitHubMark";
 import { LogoMark } from "@/components/ui/Logo";
@@ -100,20 +100,120 @@ function HomeContent() {
   const params = useSearchParams();
 
   const rawCallbackUrl = params.get("callbackUrl") ?? "";
-  const callbackUrl =
+  const hasExplicitCallback =
     rawCallbackUrl.startsWith("/") &&
-    !rawCallbackUrl.startsWith("//")
-      ? rawCallbackUrl
-      : "/dashboard";
+    !rawCallbackUrl.startsWith("//");
+  const callbackUrl = hasExplicitCallback
+    ? rawCallbackUrl
+    : "/dashboard";
 
+  // Whether the signed-in user owns at least one connected
+  // organization (i.e. is a professor who has set one up).
+  // Null while that's still unknown.
+  const [ownsOrgs, setOwnsOrgs] = useState<boolean | null>(
+    null
+  );
+
+  // Someone who arrived with an explicit destination (bounced
+  // back here mid sign-in) always continues there. Someone who
+  // lands on bare "/" only gets sent to the dashboard if they
+  // actually own an organization -- otherwise they're very
+  // likely a student who wandered here (e.g. via the redeem
+  // page's "Go Home" button after a hiccup), and the
+  // dashboard's "install the GitHub App" prompt is not meant
+  // for them.
   useEffect(() => {
-    if (status === "authenticated") {
-      router.push(callbackUrl);
+    if (status !== "authenticated") {
+      return;
     }
-  }, [status, router, callbackUrl]);
+
+    if (hasExplicitCallback) {
+      router.push(callbackUrl);
+      return;
+    }
+
+    let cancelled = false;
+
+    fetch("/api/orgs/installed")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((orgs: unknown[]) => {
+        if (cancelled) {
+          return;
+        }
+
+        if (orgs.length > 0) {
+          router.push("/dashboard");
+        } else {
+          setOwnsOrgs(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOwnsOrgs(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, hasExplicitCallback, callbackUrl, router]);
 
   if (status === "loading") {
     return <Spinner />;
+  }
+
+  // Authenticated with an explicit destination, or still
+  // waiting to learn whether this account owns an org: a
+  // redirect is imminent (or about to be decided), so avoid a
+  // flash of unrelated content.
+  if (
+    status === "authenticated" &&
+    (hasExplicitCallback || ownsOrgs === null)
+  ) {
+    return <Spinner />;
+  }
+
+  if (status === "authenticated" && ownsOrgs === false) {
+    const copy = COPY.home.signedInNoOrg;
+
+    return (
+      <div className="flex min-h-screen items-center
+                      justify-center bg-canvas px-4">
+        <div className="w-full max-w-sm rounded-xl border
+                        border-primary-100 bg-white p-8
+                        text-center shadow-md">
+          <h1 className="mb-2 text-xl font-bold
+                        text-neutral-900">
+            {copy.title}
+          </h1>
+          <p className="mb-4 text-sm text-neutral-600">
+            {copy.message}
+          </p>
+          <p className="mb-6 text-sm text-neutral-600">
+            {copy.studentNote}
+          </p>
+          <Button
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            onClick={() => router.push("/dashboard")}
+          >
+            {copy.dashboardButton}
+          </Button>
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="mt-4 text-sm font-medium
+                       text-neutral-500 hover:text-neutral-700
+                       focus-visible:outline-none
+                       focus-visible:ring-2
+                       focus-visible:ring-primary-500
+                       focus-visible:ring-offset-2 rounded-sm"
+          >
+            {copy.signOutButton}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const handleSignIn = async () => {

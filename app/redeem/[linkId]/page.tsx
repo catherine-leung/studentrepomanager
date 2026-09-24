@@ -3,7 +3,7 @@
 "use client";
 
 import { useSession, signIn } from "next-auth/react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import { JoinOrgPrompt } from "@/components/redeem/JoinOrgPrompt";
 import { AccountMismatchNotice } from "@/components/redeem/AccountMismatchNotice";
@@ -82,7 +82,6 @@ function Spinner({ message }: { message: string }) {
 
 function RedeemContent() {
   const { data: session, status } = useSession();
-  const router = useRouter();
   const params = useParams();
   const linkId = params.linkId as string;
 
@@ -91,6 +90,11 @@ function RedeemContent() {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // True specifically for a 404 (the link itself doesn't
+  // exist): a "Try Again" button would just repeat the same
+  // failed lookup, so that case gets a different message
+  // instead of a retry action.
+  const [notFound, setNotFound] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [redeeming, setRedeeming] = useState(false);
@@ -113,6 +117,7 @@ function RedeemContent() {
     async function fetchPageData() {
       setLoading(true);
       setError(null);
+      setNotFound(false);
 
       try {
         const response = await fetch(
@@ -123,6 +128,10 @@ function RedeemContent() {
         const data = await response.json();
 
         if (!response.ok) {
+          if (!cancelled && response.status === 404) {
+            setNotFound(true);
+          }
+
           throw new Error(
             data.error || "Failed to load link"
           );
@@ -205,17 +214,24 @@ function RedeemContent() {
                         border-neutral-200 bg-white p-8
                         text-center shadow-sm">
           <h1 className="mb-2 text-xl font-bold text-error">
-            Error
+            {notFound ? "Link Not Found" : "Error"}
           </h1>
           <p className="mb-6 text-sm text-neutral-600">
-            {error || "Link not found"}
+            {notFound
+              ? "This assignment link doesn't look right. " +
+                "Double-check the URL, or check with your " +
+                "instructor for the correct link."
+              : error || "Something went wrong loading " +
+                "this link."}
           </p>
-          <Button
-            variant="primary"
-            onClick={() => router.push("/")}
-          >
-            Go Home
-          </Button>
+          {!notFound && (
+            <Button
+              variant="primary"
+              onClick={() => setRefreshKey((k) => k + 1)}
+            >
+              Try Again
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -318,6 +334,7 @@ function RedeemContent() {
       <AccountMismatchNotice
         reason={pageData.accountMismatch}
         currentLogin={session?.user?.login ?? ""}
+        linkId={linkId}
       />
     );
   }

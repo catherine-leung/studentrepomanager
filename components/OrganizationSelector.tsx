@@ -162,16 +162,18 @@ export function OrganizationSelector({
   }
 
   if (orgs.length === 0) {
+    const copy = COPY.dashboard.noOrgs;
+
     return (
       <div className="mb-6">
         <Alert
           type="warning"
-          title="No organizations with the app installed"
-          message={
-            "Install the GitHub App in your organization " +
-            "to get started."
-          }
+          title={copy.title}
+          message={copy.message}
         />
+        <p className="mt-2 text-sm text-neutral-500">
+          {copy.studentNote}
+        </p>
         <p className="mt-2 text-sm text-neutral-600">
           <a
             href={
@@ -188,7 +190,7 @@ export function OrganizationSelector({
                        focus-visible:ring-offset-2
                        rounded-sm"
           >
-            Install app in organization →
+            {copy.installLink}
           </a>
         </p>
       </div>

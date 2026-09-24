@@ -56,6 +56,42 @@ export const COPY = {
       // dashboard-wide stat above.
       teamsCreated: "Teams Created",
     },
+    // Shown by OrganizationSelector when the signed-in user
+    // owns no connected organizations. This page is meant for
+    // instructors setting up a class; a student who wanders in
+    // here (e.g. after a redeem-page hiccup) should not read
+    // this as an invitation to install the app themselves.
+    noOrgs: {
+      title: "No organizations with the app installed",
+      message:
+        "This step is for instructors setting up a new " +
+        "class organization.",
+      studentNote:
+        "If you're a student, this page isn't for you — use " +
+        "the assignment link your instructor gave you " +
+        "instead.",
+      installLink: "Install app in organization →",
+    },
+  },
+
+  // Home page ("/"), shown to a signed-in user who owns no
+  // connected organizations and arrived with no specific
+  // destination in mind (as opposed to being sent back here
+  // mid sign-in with a callbackUrl). Most people in this state
+  // are students who ended up here by accident.
+  home: {
+    signedInNoOrg: {
+      title: "You're signed in",
+      message:
+        "This account isn't connected to any class " +
+        "organization yet.",
+      studentNote:
+        "Looking to redeem an assignment link? Use the link " +
+        "your instructor gave you directly — this page " +
+        "doesn't handle that.",
+      dashboardButton: "Set up a class organization →",
+      signOutButton: "Sign out",
+    },
   },
 
   // Link creation form

@@ -19,11 +19,13 @@ import { COPY } from "@/lib/copy";
 interface Props {
   reason: "needs_personal_account" | "needs_enterprise_account";
   currentLogin: string;
+  linkId: string;
 }
 
 export function AccountMismatchNotice({
   reason,
   currentLogin,
+  linkId,
 }: Props) {
   const copy =
     reason === "needs_personal_account"
@@ -66,7 +68,16 @@ export function AccountMismatchNotice({
             variant="secondary"
             size="lg"
             className="w-full"
-            onClick={() => signOut({ callbackUrl: "/" })}
+            onClick={() =>
+              // Come straight back to this same link, signed
+              // out -- not the generic home page. The redeem
+              // page's own "Sign in with GitHub" button already
+              // carries this link forward as its callbackUrl,
+              // so this closes the loop: sign out, sign back in
+              // with the right kind of account, land right back
+              // here.
+              signOut({ callbackUrl: `/redeem/${linkId}` })
+            }
           >
             {COPY.redeem.accountMismatch.switchAccount}
           </Button>
