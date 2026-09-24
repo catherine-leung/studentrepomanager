@@ -12,6 +12,10 @@ export interface Organization {
   id: number;
   org_name: string;
   installation_id: number;
+  // True when the org's owner signed in with an Enterprise
+  // Managed User (EMU) account, meaning only EMU accounts from
+  // that same enterprise can ever join this org. See lib/emu.ts.
+  is_emu: boolean;
   created_at: string;
   last_verified_at: string | null;
   updated_at: string;

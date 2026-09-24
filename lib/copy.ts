@@ -188,6 +188,43 @@ export const COPY = {
         "organization will not give you any other " +
         "permissions.",
     },
+    accountMismatch: {
+      title: "Wrong kind of GitHub account",
+      signedInAs: "Currently signed in as",
+      switchAccount: "Sign out and try again",
+      needsPersonalAccount: {
+        message:
+          "This organization is a regular github.com " +
+          "organization, but you're signed in with a GitHub " +
+          "account managed by an enterprise (a school or " +
+          "employer's Enterprise Managed Users account). " +
+          "Enterprise-managed accounts can't join " +
+          "organizations outside their own enterprise, so " +
+          "this one won't work here.",
+        instructions:
+          "Open this link in a different browser (or a " +
+          "private / incognito window) and sign in with " +
+          "your personal github.com account instead. A " +
+          "browser usually only keeps one GitHub session at " +
+          "a time, so switching browsers is the easiest way " +
+          "to use both accounts.",
+      },
+      needsEnterpriseAccount: {
+        message:
+          "This organization only accepts members from its " +
+          "own enterprise, but you're signed in with a " +
+          "personal github.com account. Personal accounts " +
+          "can't join an enterprise-managed organization " +
+          "from outside it.",
+        instructions:
+          "Open this link in a different browser (or a " +
+          "private / incognito window) and sign in with the " +
+          "GitHub account your school or employer set up " +
+          "for you instead. A browser usually only keeps " +
+          "one GitHub session at a time, so switching " +
+          "browsers is the easiest way to use both accounts.",
+      },
+    },
     solo: {
       title: "Create Your Repository",
       slugLabel: "Repository Name Suffix (optional)",

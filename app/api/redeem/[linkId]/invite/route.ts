@@ -8,7 +8,9 @@ import {
 import {
   sendOrgInvitation,
 } from "@/lib/github-app";
+import { isEmuLogin } from "@/lib/emu";
 import { internalError } from "@/lib/api-errors";
+import { COPY } from "@/lib/copy";
 
 /**
  * POST /api/redeem/[linkId]/invite
@@ -65,7 +67,27 @@ export async function POST(
       );
     }
 
-    // 4. Send invitation
+    // 4. SECURITY / UX: Refuse up front if this account can
+    // never join this org. GitHub itself would reject the
+    // invitation for an Enterprise Managed User account trying
+    // to reach a normal org (or vice versa) with a confusing
+    // error; catch it here with a clear explanation instead.
+    const studentIsEmu = isEmuLogin(authContext.login);
+
+    if (link.org_is_emu !== studentIsEmu) {
+      return NextResponse.json(
+        {
+          error: link.org_is_emu
+            ? COPY.redeem.accountMismatch.needsEnterpriseAccount
+                .message
+            : COPY.redeem.accountMismatch.needsPersonalAccount
+                .message,
+        },
+        { status: 409 }
+      );
+    }
+
+    // 5. Send invitation
     try {
       const { invitationUrl } =
         await sendOrgInvitation(

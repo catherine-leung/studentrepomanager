@@ -11,6 +11,7 @@ import {
   AssessmentNameTakenError,
 } from "@/lib/db";
 import { parseTemplateRepoUrl } from "@/lib/naming";
+import { isEmuLogin } from "@/lib/emu";
 import {
   provisionCoursedocsLink,
   CoursedocsRepoExistsError,
@@ -265,7 +266,8 @@ export async function POST(request: NextRequest) {
     if (!organization) {
       organization = await createOrganization(
         orgName,
-        installationId
+        installationId,
+        isEmuLogin(authContext.login)
       );
     }
 

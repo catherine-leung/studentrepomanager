@@ -45,13 +45,28 @@ import {
   getOrgMembershipState,
   type MembershipState,
 } from "./org-membership";
+import { isEmuLogin } from "./emu";
 
 export { TeamNameTakenError };
 
 type LinkWithOrg = RepoCreationLink & {
   org_name: string;
   installation_id: number;
+  org_is_emu: boolean;
 };
+
+/**
+ * Whether the signed-in student's GitHub account is the wrong
+ * kind for this org: a personal account trying to reach an
+ * Enterprise Managed Users (EMU) org, or an EMU account trying
+ * to reach a normal org. Either way GitHub will never let the
+ * membership go through, so the redeem page short-circuits to a
+ * dedicated explanation instead of the normal join-org flow.
+ */
+export type AccountMismatch =
+  | "needs_personal_account"
+  | "needs_enterprise_account"
+  | null;
 
 // ============================================================================
 // TYPED ERRORS
@@ -856,6 +871,11 @@ export interface RedemptionPageData {
   link: PublicLink;
   teams: (Team & { memberCount: number })[];
   membership: MembershipState;
+  // Set when the signed-in student's GitHub account is the
+  // wrong kind for this org (personal vs. Enterprise Managed
+  // User). Null for unauthenticated visitors and for a correct
+  // match. See AccountMismatch above.
+  accountMismatch: AccountMismatch;
   existingRedemption?: {
     repoName: string;
     repoUrl: string;
@@ -896,8 +916,21 @@ export async function getRedemptionPageData(
   authContext: AuthContext | null
 ): Promise<RedemptionPageData> {
   let membership: MembershipState = "none";
+  let accountMismatch: AccountMismatch = null;
 
   if (authContext) {
+    const studentIsEmu = isEmuLogin(authContext.login);
+
+    // Check this before hitting the GitHub membership API: an
+    // Enterprise Managed User account can never join a normal
+    // org, and a normal account can never join an EMU-only org,
+    // no matter what the membership check below would say.
+    if (link.org_is_emu && !studentIsEmu) {
+      accountMismatch = "needs_enterprise_account";
+    } else if (!link.org_is_emu && studentIsEmu) {
+      accountMismatch = "needs_personal_account";
+    }
+
     membership = await getOrgMembershipState(
       link.installation_id,
       link.org_name,
@@ -942,6 +975,7 @@ export async function getRedemptionPageData(
     link: toPublicLink(link),
     teams,
     membership,
+    accountMismatch,
     existingRedemption,
   };
 }

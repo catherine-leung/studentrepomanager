@@ -114,14 +114,18 @@ export async function getOrganizationById(
 
 export async function createOrganization(
   orgName: string,
-  installationId: number
+  installationId: number,
+  isEmu: boolean
 ): Promise<Organization> {
   try {
     // Case 1: reinstall — same org name, new installation_id.
     // Update the existing row to use the new installation ID.
+    // is_emu is refreshed too, in case the connecting owner
+    // changed from a personal account to an EMU one or back.
     const updated = await sql`
       UPDATE organizations
       SET installation_id = ${installationId},
+          is_emu = ${isEmu},
           updated_at = NOW()
       WHERE org_name = ${orgName}
       RETURNING *
@@ -139,12 +143,16 @@ export async function createOrganization(
       INSERT INTO organizations (
         org_name,
         installation_id,
+        is_emu,
         created_at,
         updated_at
       )
-      VALUES (${orgName}, ${installationId}, NOW(), NOW())
+      VALUES (
+        ${orgName}, ${installationId}, ${isEmu}, NOW(), NOW()
+      )
       ON CONFLICT (installation_id) DO UPDATE
         SET org_name = ${orgName},
+            is_emu = ${isEmu},
             updated_at = NOW()
       RETURNING *
     `;
@@ -327,6 +335,7 @@ export async function getRepoLinkByIdWithOrg(
   | (RepoCreationLink & {
       org_name: string;
       installation_id: number;
+      org_is_emu: boolean;
     })
   | null
 > {
@@ -335,7 +344,8 @@ export async function getRepoLinkByIdWithOrg(
       SELECT
         rcl.*,
         o.org_name,
-        o.installation_id
+        o.installation_id,
+        o.is_emu AS org_is_emu
       FROM repo_creation_links AS rcl
       JOIN organizations AS o
         ON rcl.org_id = o.id
@@ -346,6 +356,7 @@ export async function getRepoLinkByIdWithOrg(
       RepoCreationLink & {
         org_name: string;
         installation_id: number;
+        org_is_emu: boolean;
       }
     >(result);
   } catch (error) {

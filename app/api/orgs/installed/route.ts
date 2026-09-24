@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthContext } from "@/lib/session";
 import { createOrganization } from "@/lib/db";
+import { isEmuLogin } from "@/lib/emu";
 import {
   listAppInstallations,
   getOrgRoleViaInstallation,
@@ -72,10 +73,23 @@ export async function GET(req: NextRequest) {
       (org): org is OwnedOrganization => org !== null
     );
 
-    // 3. Keep installation_id fresh in the DB
+    // 3. Keep installation_id (and EMU status) fresh in the DB.
+    //
+    // Every member of an Enterprise Managed Users (EMU) org must
+    // itself be an EMU account, so checking whether *this*
+    // owner's own login is EMU-shaped tells us whether the whole
+    // org is EMU-only. That is later compared against each
+    // student's login to catch students signed in with the
+    // wrong kind of GitHub account. See lib/emu.ts.
+    const connectingUserIsEmu = isEmuLogin(authContext.login);
+
     await Promise.all(
       organizations.map((org) =>
-        createOrganization(org.login, org.installation_id)
+        createOrganization(
+          org.login,
+          org.installation_id,
+          connectingUserIsEmu
+        )
       )
     );
 

@@ -6,6 +6,11 @@ CREATE TABLE organizations (
   id SERIAL PRIMARY KEY,
   org_name VARCHAR(255) NOT NULL,
   installation_id BIGINT NOT NULL UNIQUE,
+  -- True when the connecting owner's GitHub login is an
+  -- Enterprise Managed User (EMU) account, meaning only EMU
+  -- accounts from that same enterprise can ever join this org.
+  -- See lib/emu.ts.
+  is_emu BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_verified_at TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

@@ -6,6 +6,7 @@ import { useSession, signIn } from "next-auth/react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, Suspense } from "react";
 import { JoinOrgPrompt } from "@/components/redeem/JoinOrgPrompt";
+import { AccountMismatchNotice } from "@/components/redeem/AccountMismatchNotice";
 import { TeamSelector } from "@/components/redeem/TeamSelector";
 import { RedeemSuccess } from "@/components/redeem/RedeemSuccess";
 import { RedeemNav } from "@/components/redeem/RedeemNav";
@@ -37,6 +38,10 @@ interface PageData {
     memberCount: number;
   }>;
   membership: "active" | "pending" | "none";
+  accountMismatch:
+    | "needs_personal_account"
+    | "needs_enterprise_account"
+    | null;
   existingRedemption?: RedemptionSummary;
 }
 
@@ -76,7 +81,7 @@ function Spinner({ message }: { message: string }) {
 }
 
 function RedeemContent() {
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const params = useParams();
   const linkId = params.linkId as string;
@@ -302,6 +307,18 @@ function RedeemContent() {
           </p>
         </div>
       </div>
+    );
+  }
+
+  // A wrong-kind-of-account mismatch (personal vs. Enterprise
+  // Managed User) is unfixable by joining the org, so it takes
+  // priority over the normal join-org flow.
+  if (pageData.accountMismatch) {
+    return (
+      <AccountMismatchNotice
+        reason={pageData.accountMismatch}
+        currentLogin={session?.user?.login ?? ""}
+      />
     );
   }
 

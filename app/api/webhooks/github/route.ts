@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createOrganization, deactivateLinksForOrg } from "@/lib/db";
 import { applyOrgSecuritySettings } from "@/lib/org-settings";
+import { isEmuLogin } from "@/lib/emu";
 import { internalError } from "@/lib/api-errors";
 
 /**
@@ -123,8 +124,24 @@ export async function POST(req: NextRequest) {
         );
 
         try {
-          // 1. Record the org in the database
-          await createOrganization(accountLogin, installationId);
+          // 1. Record the org in the database.
+          //
+          // `sender` is whoever clicked "Install" on GitHub --
+          // if their own login is EMU-shaped, every member of
+          // this org must be too (see lib/emu.ts). This is a
+          // best-effort guess at install time; it's re-derived
+          // and corrected the next time an owner opens the
+          // dashboard, via /api/orgs/installed.
+          const installerLogin: string | undefined =
+            payload.sender?.login;
+
+          await createOrganization(
+            accountLogin,
+            installationId,
+            installerLogin
+              ? isEmuLogin(installerLogin)
+              : false
+          );
 
           // 2. Apply org security settings
           await applyOrgSecuritySettings(
