@@ -202,9 +202,8 @@ export const COPY = {
   redeem: {
     joinOrg: {
       title: "Join Organization",
-      message:
-        "You need to join the organization on GitHub " +
-        "before you can redeem this link.",
+      preMessage: "You need to join the organization ",
+      postMessage: " on GitHub before you can redeem this link.",
       sendInvitation: "Send Invitation",
       sendingInvitation: "Sending invitation...",
       acceptInvitation: "Accept Invitation on GitHub →",
