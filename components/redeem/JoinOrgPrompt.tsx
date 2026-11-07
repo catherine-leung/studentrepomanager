@@ -161,11 +161,11 @@ export function JoinOrgPrompt({
           </h1>
 
           <p className="mb-5 text-sm text-neutral-600">
-            {COPY.redeem.joinOrg.message}{" "}
+            {COPY.redeem.joinOrg.preMessage}{" "}
             <span className="font-mono font-bold text-neutral-900">
               {orgName}
             </span>{" "}
-            on GitHub before you can redeem this link.
+            {COPY.redeem.joinOrg.postMessage}{" "}
           </p>
 
           {error && (
